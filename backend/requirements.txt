@@ -1,0 +1,9 @@
+flask
+flask-cors
+torch
+transformers
+redis
+onnxruntime
+scikit-learn
+python-dotenv
+psutil>=5.9.0
