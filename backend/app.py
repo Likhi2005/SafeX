@@ -3,12 +3,21 @@ from flask_cors import CORS
 import logging
 
 # Import blueprints
-from backend.routes.health import health_bp
+from backend.routes import health_bp
 
 def create_app():
     """Application factory pattern for Flask app."""
     app = Flask(__name__)
     CORS(app)
+    
+#     CORS(
+#     app,
+#     origins=["https://myfrontend.com"],
+#     methods=["GET", "POST", "PUT", "DELETE"],
+#     allow_headers=["Content-Type", "Authorization"],
+#     supports_credentials=True
+# )
+
     
     # Configure logging
     logging.basicConfig(level=logging.INFO)
