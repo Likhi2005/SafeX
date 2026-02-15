@@ -110,3 +110,7 @@ docker-compose.override.yml
 *.pem
 *.key
 secrets.json
+
+# Model files
+*.pkl
+models/
