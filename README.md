@@ -53,6 +53,17 @@ This step is to implement the Policy Engine that combines all filter results and
 
 ---
 
+## STAGE 6: Semantic Sanitizer
+
+This step is to implement the Semantic Sanitizer that safely rewrites risky prompts when the policy decides to SANITIZE instead of BLOCK.
+
+---
+
+## STAGE 7: Unified Security Pipeline
+Final decsion and api result setup
+
+---
+
 ## Test Cases
 
 Run individual test files:
