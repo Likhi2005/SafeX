@@ -25,3 +25,6 @@ conda activate shieldgpt
 
 ### STAGE 4: DistilBERT Classifier for Advanced Attack Detection
 #### This step is to implement the ML-based classifier using DistilBERT for sophisticated attack detection that regex patterns might miss.
+
+### STAGE 5: Policy Engine & Decision Logic
+#### This step is to implement the Policy Engine that combines all filter results and makes final decisions (ALLOW/SANITIZE/BLOCK).
