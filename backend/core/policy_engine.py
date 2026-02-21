@@ -84,7 +84,7 @@ class PolicyEngine:
                 
                 # Handle obfuscation detector special case
                 if filter_name == "obfuscation_detector":
-                    filter_score = filter_results.get("risk_score", 0.0)
+                    filter_score = filter_result.get("obfuscation_score", 0.0)
                     
                 total_score += filter_score * weight
                 total_weight += weight

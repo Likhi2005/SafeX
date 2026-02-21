@@ -114,3 +114,6 @@ secrets.json
 # Model files
 *.pkl
 models/
+
+# extra
+imp.txt
