@@ -1,0 +1,13 @@
+frontend
+tests
+.git
+__pycache__
+.pytest_cache
+dist
+nodemodules
+
+
+# Extra
+imp.txt
+path_test.py
+template.py

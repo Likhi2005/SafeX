@@ -1,6 +1,6 @@
 import logging
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Import all security components
 from backend.filters.regex_filter import analyze_prompt as regex_analyze
@@ -17,7 +17,14 @@ class SecurityPipeline:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.pipeline_version = "1.0.0"
+        # self.pipeline_version = "1.0.0"
+        self.pipeline_version = "2.0.0-onnx"
+        self._performance_stats = {
+            "total_requests": 0,
+            "avg_processing_time": 0.0,
+            "blocked_requests": 0,
+            "sanitized_requests": 0
+        }
     
     def analyze(self, prompt: str, user_id: str = None) -> Dict[str, Any]:
         """
@@ -82,6 +89,14 @@ class SecurityPipeline:
             end_time = datetime.utcnow()
             processing_time = (end_time - start_time).total_seconds()
             
+            # Update stats
+            self._update_performance_stats(processing_time, policy_decision.get('decision'))
+            
+            # Log performance
+            self.logger.info(f"Analysis complete: {policy_decision.get('decision')} "
+                           f"(risk: {policy_decision.get('risk_score'):.3f}) "
+                           f"in {processing_time:.3f}s - user: {user_id}")
+            
             return self._create_success_result(
                 original_prompt=prompt,
                 processed_prompt=final_prompt,
@@ -107,10 +122,37 @@ class SecurityPipeline:
         
         return True
     
-    def _create_success_result(self, original_prompt: str, processed_prompt: str,
-                             policy_decision: Dict, filter_results: Dict,
-                             sanitization_result: Optional[Dict], processing_time: float,
-                             user_id: str = None) -> Dict[str, Any]:
+    
+    def _update_performance_stats(self, processing_time: float, decision: str):
+        """Update performance statistics."""
+        self._performance_stats["total_requests"] += 1
+        
+        # Update average processing time using exponential moving average
+        alpha = 0.1
+        self._performance_stats["avg_processing_time"] = (
+            alpha * processing_time + 
+            (1 - alpha) * self._performance_stats["avg_processing_time"]
+        )
+        
+        if decision == "BLOCK":
+            self._performance_stats["blocked_requests"] += 1
+        elif decision == "SANITIZE":
+            self._performance_stats["sanitized_requests"] += 1
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get current performance statistics."""
+        return self._performance_stats.copy()
+    
+    
+    
+    def _create_success_result(self, 
+        original_prompt: str,
+        processed_prompt: str,
+        policy_decision: Dict,
+        filter_results: Dict,
+        sanitization_result: Optional[Dict],
+        processing_time: float,
+        user_id: str = None) -> Dict[str, Any]:
         """Create successful analysis result."""
         
         return {
@@ -133,8 +175,9 @@ class SecurityPipeline:
             # Metadata
             "processing_time_seconds": processing_time,
             "pipeline_version": self.pipeline_version,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "user_id": user_id
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "user_id": user_id,
+            "optimization": "onnx-enabled"
         }
     
     def _create_error_result(self, error: str, prompt: str = None) -> Dict[str, Any]:
@@ -148,8 +191,9 @@ class SecurityPipeline:
             "error": error,
             "original_prompt": prompt,
             "processed_prompt": None,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "pipeline_version": self.pipeline_version
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "pipeline_version": self.pipeline_version,
+            # "optimization": "onnx-enabled"
         }
 
 # Global pipeline instance
@@ -167,3 +211,7 @@ def analyze_prompt_security(prompt: str, user_id: str = None) -> Dict[str, Any]:
         Complete security analysis result
     """
     return security_pipeline.analyze(prompt, user_id)
+
+def get_pipeline_stats() -> Dict[str, Any]:
+    """Get pipeline performance statistics."""
+    return security_pipeline.get_performance_stats()
