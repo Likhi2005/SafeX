@@ -1,6 +1,11 @@
-from .health import health_bp
+from flask import Blueprint
 
-__all__ = ['health_bp']
+# Import blueprints
+from .health import health_bp
+from .analysis import analysis_bp
+
+# You can register these in app.py
+__all__ = ['health_bp', 'analysis_bp']
 
 """
 SafeX Backend - LLM Security Gateway

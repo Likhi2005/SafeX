@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     CheckCircleIcon,
     ExclamationTriangleIcon,
@@ -8,10 +8,23 @@ import {
     ChartBarIcon,
     EyeIcon,
     DocumentIcon,
+    ChevronDownIcon,
+    ChevronRightIcon,
+    InformationCircleIcon,
     ArrowTopRightOnSquareIcon
 } from '@heroicons/react/24/outline';
 
 const ResultPanel = ({ result, isLoading }) => {
+    const [expandedFilters, setExpandedFilters] = useState({});
+    const [showRawData, setShowRawData] = useState(false);
+
+    const toggleFilterExpanded = (filterName) => {
+        setExpandedFilters(prev => ({
+            ...prev,
+            [filterName]: !prev[filterName]
+        }));
+    };
+
     if (isLoading) {
         return (
             <div className="bg-card rounded-xl p-8 border border-border">
@@ -25,7 +38,7 @@ const ResultPanel = ({ result, isLoading }) => {
                         </div>
                         <div className="space-y-2">
                             <p className="text-textPrimary font-semibold text-lg">Analyzing prompt safety...</p>
-                            <p className="text-textMuted text-sm">Running security filters and ML models</p>
+                            <p className="text-textMuted text-sm">Running multi-layer security analysis</p>
                             <div className="flex items-center justify-center space-x-2 mt-4">
                                 <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
                                 <div className="w-2 h-2 bg-primary rounded-full animate-pulse delay-75"></div>
@@ -47,20 +60,20 @@ const ResultPanel = ({ result, isLoading }) => {
                     </div>
                     <h3 className="text-textPrimary text-xl font-semibold mb-2">Ready for Safety Analysis</h3>
                     <p className="text-textMuted text-base mb-6 max-w-md mx-auto">
-                        Enter a prompt above to start comprehensive AI safety analysis using our advanced security filters
+                        Enter a prompt above to start comprehensive AI safety analysis
                     </p>
                     <div className="flex items-center justify-center space-x-6 text-sm text-textMuted">
                         <div className="flex items-center space-x-2">
                             <div className="w-2 h-2 bg-primary rounded-full"></div>
-                            <span>Toxicity Detection</span>
+                            <span>Pattern Detection</span>
                         </div>
                         <div className="flex items-center space-x-2">
                             <div className="w-2 h-2 bg-secondary rounded-full"></div>
-                            <span>Injection Prevention</span>
+                            <span>ML Analysis</span>
                         </div>
                         <div className="flex items-center space-x-2">
                             <div className="w-2 h-2 bg-warning rounded-full"></div>
-                            <span>Content Analysis</span>
+                            <span>Obfuscation Check</span>
                         </div>
                     </div>
                 </div>
@@ -71,25 +84,28 @@ const ResultPanel = ({ result, isLoading }) => {
     const getDecisionBadge = (decision) => {
         const badges = {
             'ALLOW': {
-                color: 'bg-secondary text-white',
+                color: 'bg-secondary text-background',
                 textColor: 'text-secondary',
                 bgLight: 'bg-secondary/10',
                 icon: CheckCircleIcon,
-                label: 'Safe'
+                label: 'Safe',
+                glow: 'shadow-glow-green'
             },
             'SANITIZE': {
-                color: 'bg-warning text-black',
+                color: 'bg-warning text-background',
                 textColor: 'text-warning',
                 bgLight: 'bg-warning/10',
                 icon: ExclamationTriangleIcon,
-                label: 'Violation'
+                label: 'Needs Sanitization',
+                glow: 'shadow-glow-yellow'
             },
             'BLOCK': {
                 color: 'bg-danger text-white',
                 textColor: 'text-danger',
                 bgLight: 'bg-danger/10',
                 icon: XCircleIcon,
-                label: 'Violation'
+                label: 'Blocked',
+                glow: 'shadow-glow-red'
             }
         };
 
@@ -97,7 +113,7 @@ const ResultPanel = ({ result, isLoading }) => {
         const Icon = badge.icon;
 
         return (
-            <div className={`inline-flex items-center space-x-2 px-3 py-1 rounded-full text-sm font-medium ${badge.color}`}>
+            <div className={`inline-flex items-center space-x-2 px-4 py-2 rounded-full text-sm font-medium ${badge.color} ${badge.glow}`}>
                 <Icon className="h-4 w-4" />
                 <span>{badge.label}</span>
             </div>
@@ -114,6 +130,248 @@ const ResultPanel = ({ result, isLoading }) => {
         if (score >= 0.7) return 'bg-danger';
         if (score >= 0.4) return 'bg-warning';
         return 'bg-secondary';
+    };
+
+    const getFilterStatusBadge = (status) => {
+        const statusConfig = {
+            'SAFE': { color: 'bg-secondary/20 text-secondary border border-secondary/30', icon: CheckCircleIcon },
+            'LOW': { color: 'bg-primary/20 text-primary border border-primary/30', icon: InformationCircleIcon },
+            'MEDIUM': { color: 'bg-warning/20 text-warning border border-warning/30', icon: ExclamationTriangleIcon },
+            'HIGH': { color: 'bg-danger/20 text-danger border border-danger/30', icon: ExclamationTriangleIcon },
+            'CRITICAL': { color: 'bg-danger/30 text-danger border border-danger/50', icon: XCircleIcon }
+        };
+
+        const config = statusConfig[status] || statusConfig['SAFE'];
+        const Icon = config.icon;
+
+        return (
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${config.color}`}>
+                <Icon className="w-3 h-3 mr-1" />
+                {status}
+            </span>
+        );
+    };
+
+    const DetailedFilters = ({ detailedFilters }) => {
+        if (!detailedFilters) {
+            // Fallback to basic filter results
+            const filterResults = result.filter_results || {};
+            return (
+                <div className="space-y-4">
+                    {Object.entries(filterResults).map(([filterKey, filterData]) => (
+                        <div key={filterKey} className="border border-border rounded-lg overflow-hidden bg-card">
+                            <div className="px-4 py-3 bg-background/50 border-b border-border">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center space-x-3">
+                                        <div>
+                                            <h4 className="font-medium text-textPrimary capitalize">
+                                                {filterKey.replace('_', ' ')}
+                                            </h4>
+                                            <p className="text-sm text-textMuted">
+                                                {filterData.reason || 'Security filter analysis'}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center space-x-3">
+                                        <span className={`text-lg font-bold ${getRiskScoreColor(filterData.risk_score || 0)}`}>
+                                            {((filterData.risk_score || 0) * 100).toFixed(1)}%
+                                        </span>
+                                        {getFilterStatusBadge(filterData.risk_score >= 0.7 ? 'HIGH' : filterData.risk_score >= 0.4 ? 'MEDIUM' : 'SAFE')}
+                                    </div>
+                                </div>
+                                {/* Progress Bar */}
+                                <div className="mt-3">
+                                    <div className="w-full bg-border rounded-full h-2">
+                                        <div
+                                            className={`h-2 rounded-full transition-all duration-500 ${getProgressBarColor(filterData.risk_score || 0)}`}
+                                            style={{ width: `${(filterData.risk_score || 0) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        return (
+            <div className="space-y-4">
+                {Object.entries(detailedFilters).map(([filterKey, filterData]) => (
+                    <div key={filterKey} className="border border-border rounded-lg overflow-hidden bg-card">
+                        <div
+                            className="px-4 py-3 bg-background/50 cursor-pointer hover:bg-background/70 transition-colors border-b border-border"
+                            onClick={() => toggleFilterExpanded(filterKey)}
+                        >
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center space-x-3">
+                                    {expandedFilters[filterKey] ?
+                                        <ChevronDownIcon className="h-4 w-4 text-textMuted" /> :
+                                        <ChevronRightIcon className="h-4 w-4 text-textMuted" />
+                                    }
+                                    <div>
+                                        <h4 className="font-medium text-textPrimary">{filterData.name}</h4>
+                                        <p className="text-sm text-textMuted">{filterData.description}</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center space-x-3">
+                                    <span className={`text-lg font-bold ${getRiskScoreColor(filterData.risk_score)}`}>
+                                        {(filterData.risk_score * 100).toFixed(1)}%
+                                    </span>
+                                    {getFilterStatusBadge(filterData.status)}
+                                </div>
+                            </div>
+                            {/* Progress Bar */}
+                            <div className="mt-3">
+                                <div className="w-full bg-border rounded-full h-2">
+                                    <div
+                                        className={`h-2 rounded-full transition-all duration-500 ${getProgressBarColor(filterData.risk_score)}`}
+                                        style={{ width: `${filterData.risk_score * 100}%` }}
+                                    ></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {expandedFilters[filterKey] && (
+                            <div className="px-4 py-4 bg-card">
+                                {/* Detailed Analysis */}
+                                <div className="space-y-4">
+                                    {/* Reason */}
+                                    <div className="bg-background/30 rounded-lg p-3">
+                                        <span className="text-sm font-medium text-textPrimary">Analysis Result:</span>
+                                        <p className="text-sm text-textMuted mt-1">{filterData.reason}</p>
+                                    </div>
+
+                                    {/* Filter-specific details */}
+                                    <FilterSpecificDetails
+                                        type={filterKey}
+                                        data={filterData}
+                                    />
+
+                                    {/* Technical Details */}
+                                    {filterData.details && (
+                                        <div className="bg-background/30 rounded-lg p-3">
+                                            <h5 className="text-sm font-medium text-textPrimary mb-2">Technical Details</h5>
+                                            <dl className="grid grid-cols-2 gap-2 text-xs">
+                                                {Object.entries(filterData.details).map(([key, value]) => (
+                                                    <div key={key}>
+                                                        <dt className="text-textMuted capitalize">{key.replace('_', ' ')}:</dt>
+                                                        <dd className="text-textPrimary font-medium">
+                                                            {Array.isArray(value) ? value.join(', ') : String(value)}
+                                                        </dd>
+                                                    </div>
+                                                ))}
+                                            </dl>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+        );
+    };
+
+    const FilterSpecificDetails = ({ type, data }) => {
+        switch (type) {
+            case 'regex_filter':
+                return (
+                    <div className="space-y-3">
+                        {data.categories_detected?.length > 0 && (
+                            <div className="bg-danger/10 rounded-lg p-3">
+                                <span className="text-sm font-medium text-textPrimary">Threat Categories Detected:</span>
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                    {data.categories_detected.map((category, idx) => (
+                                        <span key={idx} className="px-2 py-1 bg-danger/20 text-danger text-xs rounded-full capitalize border border-danger/30">
+                                            {category.replace('_', ' ')}
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {data.matches?.length > 0 && (
+                            <div className="bg-background/30 rounded-lg p-3">
+                                <span className="text-sm font-medium text-textPrimary">Pattern Matches:</span>
+                                <div className="mt-2 text-xs bg-background/50 p-2 rounded max-h-32 overflow-y-auto border border-border">
+                                    {data.matches.map((match, idx) => (
+                                        <div key={idx} className="mb-1 pb-1 border-b border-border/50 last:border-b-0">
+                                            <span className="font-mono text-danger">"{match.match}"</span>
+                                            <span className="text-textMuted ml-2">({match.category})</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+
+            case 'obfuscation_detector':
+                return (
+                    <div className="space-y-3">
+                        {data.is_obfuscated && (
+                            <div className="bg-warning/10 rounded-lg p-3">
+                                <span className="text-sm font-medium text-textPrimary">Obfuscation Techniques:</span>
+                                <div className="flex flex-wrap gap-1 mt-2">
+                                    {data.techniques_found?.map((technique, idx) => (
+                                        <span key={idx} className="px-2 py-1 bg-warning/20 text-warning text-xs rounded-full border border-warning/30">
+                                            {technique.type?.replace('_', ' ')} ({technique.score?.toFixed(2)})
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {data.decoded_prompt && data.decoded_prompt.length > 0 && (
+                            <div className="bg-background/30 rounded-lg p-3">
+                                <span className="text-sm font-medium text-textPrimary">Decoded Content:</span>
+                                <div className="mt-2 text-xs bg-background/50 p-2 rounded font-mono max-h-24 overflow-y-auto border border-border">
+                                    {data.decoded_prompt}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+
+            case 'ml_classifier':
+                return (
+                    <div className="space-y-3">
+                        {data.ml_results?.length > 0 && (
+                            <div className="bg-primary/10 rounded-lg p-3">
+                                <span className="text-sm font-medium text-textPrimary">ML Model Results:</span>
+                                <div className="mt-2 space-y-2">
+                                    {data.ml_results.map((mlResult, idx) => (
+                                        <div key={idx} className="flex justify-between items-center bg-background/30 p-2 rounded text-xs border border-border">
+                                            <span className="font-medium capitalize text-textPrimary">
+                                                {mlResult.method?.replace('_', ' ')}
+                                            </span>
+                                            <div className="flex items-center space-x-2">
+                                                <span className={`font-bold ${getRiskScoreColor(mlResult.score || 0)}`}>
+                                                    {((mlResult.score || 0) * 100).toFixed(1)}%
+                                                </span>
+                                                <span className="text-textMuted">{mlResult.reason}</span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {data.model_info && (
+                            <div className="bg-background/30 rounded-lg p-3">
+                                <span className="text-sm font-medium text-textPrimary">Model Information:</span>
+                                <div className="mt-2 text-xs text-textMuted space-y-1">
+                                    <div>Type: <span className="text-textPrimary">{data.model_info.model_type || 'Unknown'}</span></div>
+                                    <div>Status: <span className={`font-medium ${data.model_info.initialized ? 'text-secondary' : 'text-warning'}`}>
+                                        {data.model_info.initialized ? 'Loaded' : 'Fallback Mode'}
+                                    </span></div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                );
+
+            default:
+                return null;
+        }
     };
 
     const formatTimestamp = () => {
@@ -135,22 +393,22 @@ const ResultPanel = ({ result, isLoading }) => {
     return (
         <div className="space-y-6">
             {/* Header Section */}
-            <div className="bg-card rounded-xl p-6 border border-border">
+            <div className="bg-card rounded-xl p-6 border border-border shadow-glow">
                 <div className="flex items-center justify-between mb-6">
                     <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+                        <div className="w-12 h-12 bg-primary/10 rounded-lg flex items-center justify-center">
                             <ShieldCheckIcon className="h-6 w-6 text-primary" />
                         </div>
                         <div>
-                            <h2 className="text-xl font-semibold text-textPrimary">LLM Safety Analysis</h2>
-                            <p className="text-sm text-textMuted">Real-time security assessment completed</p>
+                            <h2 className="text-xl font-semibold text-textPrimary">Security Analysis Complete</h2>
+                            <p className="text-sm text-textMuted">Multi-layer threat detection results</p>
                         </div>
                     </div>
                     <div className="flex items-center space-x-4">
-                        {result.latency_ms && (
+                        {result.processing_time_seconds && (
                             <div className="flex items-center space-x-1 text-textMuted text-sm">
                                 <ClockIcon className="h-4 w-4" />
-                                <span>{result.latency_ms}ms</span>
+                                <span>{(result.processing_time_seconds * 1000).toFixed(0)}ms</span>
                             </div>
                         )}
                         {getDecisionBadge(result.decision)}
@@ -158,88 +416,106 @@ const ResultPanel = ({ result, isLoading }) => {
                 </div>
 
                 {/* Quick Stats */}
-                <div className="grid grid-cols-3 gap-6">
-                    <div className="text-center">
+                <div className="grid grid-cols-4 gap-6 mb-6">
+                    <div className="text-center bg-background/30 rounded-lg p-4">
                         <div className={`text-3xl font-bold ${getRiskScoreColor(result.risk_score)} mb-1`}>
                             {(result.risk_score * 100).toFixed(1)}%
                         </div>
-                        <div className="text-sm text-textMuted">Overall Safety Score</div>
+                        <div className="text-sm text-textMuted">Risk Score</div>
                     </div>
-                    <div className="text-center">
+                    <div className="text-center bg-background/30 rounded-lg p-4">
                         <div className="text-3xl font-bold text-primary mb-1">
-                            {Object.keys(result.filter_results || {}).length}
+                            {result.filter_summary?.filters_triggered || Object.keys(result.filter_results || {}).length}
                         </div>
-                        <div className="text-sm text-textMuted">Security Checks</div>
+                        <div className="text-sm text-textMuted">Filters Triggered</div>
                     </div>
-                    <div className="text-center">
+                    <div className="text-center bg-background/30 rounded-lg p-4">
                         <div className="text-3xl font-bold text-textPrimary mb-1">
-                            {result.latency_ms || 0}<span className="text-lg text-textMuted">ms</span>
+                            {result.processing_time_seconds ? (result.processing_time_seconds * 1000).toFixed(0) : '0'}<span className="text-lg text-textMuted">ms</span>
                         </div>
                         <div className="text-sm text-textMuted">Response Time</div>
                     </div>
+                    <div className="text-center bg-background/30 rounded-lg p-4">
+                        <div className="text-3xl font-bold text-secondary mb-1">
+                            {(result.filter_summary?.overall_confidence || result.confidence || 'MEDIUM').toUpperCase()}
+                        </div>
+                        <div className="text-sm text-textMuted">Confidence</div>
+                    </div>
                 </div>
 
-                {/* Progress Bar */}
-                <div className="mt-6">
+                {/* Overall Risk Progress Bar */}
+                <div className="mb-4">
                     <div className="flex justify-between items-center mb-2">
-                        <span className="text-sm font-medium text-textPrimary">Risk Level</span>
+                        <span className="text-sm font-medium text-textPrimary">Overall Risk Level</span>
                         <span className={`text-sm font-medium ${getRiskScoreColor(result.risk_score)}`}>
-                            {result.risk_score >= 0.8 ? 'CRITICAL' :
+                            {result.risk_level || (result.risk_score >= 0.8 ? 'CRITICAL' :
                                 result.risk_score >= 0.6 ? 'HIGH' :
-                                    result.risk_score >= 0.4 ? 'MEDIUM' :
-                                        result.risk_score >= 0.2 ? 'LOW' : 'MINIMAL'}
+                                    result.risk_score >= 0.4 ? 'MEDIUM' : 'LOW')}
                         </span>
                     </div>
-                    <div className="w-full bg-border rounded-full h-2">
+                    <div className="w-full bg-border rounded-full h-3">
                         <div
-                            className={`h-2 rounded-full transition-all duration-1000 ${getProgressBarColor(result.risk_score)}`}
+                            className={`h-3 rounded-full transition-all duration-1000 ${getProgressBarColor(result.risk_score)}`}
                             style={{ width: `${Math.max(result.risk_score * 100, 2)}%` }}
                         ></div>
+                    </div>
+                </div>
+
+                {/* Explanation */}
+                <div className="bg-background/30 rounded-lg p-4 border border-border">
+                    <div className="flex items-start space-x-3">
+                        <InformationCircleIcon className="h-5 w-5 text-primary mt-0.5 flex-shrink-0" />
+                        <div>
+                            <p className="text-sm text-textPrimary font-medium">Analysis Summary</p>
+                            <p className="text-sm text-textMuted mt-1">
+                                {result.explanation || 'No explanation available'}
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
 
             {/* Data Table - Guardrail Style */}
             <div className="bg-card rounded-xl border border-border overflow-hidden">
-                <div className="px-6 py-4 border-b border-border">
+                <div className="px-6 py-4 border-b border-border bg-background/30">
                     <h3 className="text-lg font-semibold text-textPrimary">Real-time LLM Input/Output Log</h3>
                 </div>
 
                 <div className="overflow-x-auto">
                     <table className="w-full">
-                        <thead className="bg-background">
+                        <thead className="bg-background/50">
                             <tr>
-                                <th className="text-left p-4 text-textMuted font-medium text-sm">Timestamp ↑</th>
-                                <th className="text-left p-4 text-textMuted font-medium text-sm">Source Model</th>
-                                <th className="text-left p-4 text-textMuted font-medium text-sm">Prompt (Truncated)</th>
-                                <th className="text-left p-4 text-textMuted font-medium text-sm">Output (Truncated)</th>
-                                <th className="text-left p-4 text-textMuted font-medium text-sm">Safety Status</th>
+                                <th className="text-left p-4 text-textMuted font-medium text-sm border-b border-border">Timestamp ↑</th>
+                                <th className="text-left p-4 text-textMuted font-medium text-sm border-b border-border">Source Model</th>
+                                <th className="text-left p-4 text-textMuted font-medium text-sm border-b border-border">Prompt (Truncated)</th>
+                                <th className="text-left p-4 text-textMuted font-medium text-sm border-b border-border">Output (Truncated)</th>
+                                <th className="text-left p-4 text-textMuted font-medium text-sm border-b border-border">Safety Status</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr className="border-b border-border hover:bg-background/50">
+                            <tr className="border-b border-border hover:bg-background/30">
                                 <td className="p-4 text-textPrimary text-sm font-mono">
                                     {formatTimestamp()}
                                 </td>
                                 <td className="p-4 text-textPrimary text-sm">
-                                    ShieldGPT
+                                    SafeX Gateway
                                 </td>
                                 <td className="p-4 text-textPrimary text-sm max-w-xs">
                                     <div className="flex items-center space-x-2">
                                         <span className="text-primary">"</span>
-                                        <span>{truncateText(result.prompt || "Test prompt", 40)}</span>
+                                        <span>{truncateText(result.original_prompt || "Test prompt", 40)}</span>
                                         <span className="text-primary">"</span>
                                     </div>
                                 </td>
                                 <td className="p-4 text-textPrimary text-sm max-w-xs">
-                                    {result.response ? (
+                                    {result.processed_prompt !== result.original_prompt ? (
                                         <div className="flex items-center space-x-2">
-                                            <span className="text-primary">"</span>
-                                            <span>{truncateText(result.response, 40)}</span>
-                                            <span className="text-primary">"</span>
+                                            <span className="text-warning">"</span>
+                                            <span>{truncateText(result.processed_prompt || "Sanitized", 40)}</span>
+                                            <span className="text-warning">"</span>
                                         </div>
                                     ) : (
-                                        <span className="text-textMuted italic">No response generated</span>
+                                        <span className="text-textMuted italic">No modifications applied</span>
                                     )}
                                 </td>
                                 <td className="p-4">
@@ -251,417 +527,35 @@ const ResultPanel = ({ result, isLoading }) => {
                 </div>
             </div>
 
-            {/* Filter Results Grid */}
-            {result.filter_results && Object.keys(result.filter_results).length > 0 && (
-                <div className="bg-card rounded-xl p-6 border border-border">
-                    <h3 className="text-lg font-semibold text-textPrimary mb-4">Security Filter Analysis</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {Object.entries(result.filter_results).map(([filterName, filterResult]) => {
-                            const riskColor = filterResult.risk_score >= 0.7 ? 'border-danger bg-danger/5' :
-                                filterResult.risk_score >= 0.4 ? 'border-warning bg-warning/5' :
-                                    'border-secondary bg-secondary/5';
-
-                            return (
-                                <div key={filterName} className={`rounded-lg p-4 border ${riskColor}`}>
-                                    <div className="flex items-center justify-between mb-3">
-                                        <span className="text-textPrimary font-medium capitalize text-sm">
-                                            {filterName.replace('_', ' ')}
-                                        </span>
-                                        <ChartBarIcon className="h-4 w-4 text-primary" />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <div className="flex justify-between items-center">
-                                            <span className="text-textMuted text-xs">Risk Score:</span>
-                                            <span className={`font-bold text-sm ${getRiskScoreColor(filterResult.risk_score)}`}>
-                                                {(filterResult.risk_score * 100).toFixed(1)}%
-                                            </span>
-                                        </div>
-                                        <div className="w-full bg-border rounded-full h-1.5">
-                                            <div
-                                                className={`h-1.5 rounded-full transition-all duration-500 ${getProgressBarColor(filterResult.risk_score)}`}
-                                                style={{ width: `${Math.max(filterResult.risk_score * 100, 2)}%` }}
-                                            ></div>
-                                        </div>
-                                        {filterResult.reason && (
-                                            <p className="text-xs text-textMuted mt-2 line-clamp-2">{filterResult.reason}</p>
-                                        )}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+            {/* Detailed Filter Results */}
+            <div className="bg-card rounded-xl p-6 border border-border">
+                <div className="flex items-center justify-between mb-6">
+                    <h3 className="text-lg font-semibold text-textPrimary">Filter Analysis Details</h3>
+                    <button
+                        onClick={() => setShowRawData(!showRawData)}
+                        className="text-sm text-primary hover:text-primary/80 transition-colors flex items-center space-x-1"
+                    >
+                        <EyeIcon className="h-4 w-4" />
+                        <span>{showRawData ? 'Hide' : 'Show'} Raw Data</span>
+                    </button>
                 </div>
-            )}
 
-            {/* Detection Details */}
-            {result.reasons && result.reasons.length > 0 && (
-                <div className="bg-card rounded-xl p-6 border border-border">
-                    <h3 className="text-lg font-semibold text-textPrimary mb-4">Detection Details</h3>
-                    <div className="space-y-3">
-                        {result.reasons.map((reason, index) => (
-                            <div key={index} className="flex items-start space-x-3 p-4 bg-warning/5 border border-warning/20 rounded-lg">
-                                <div className="w-6 h-6 bg-warning/20 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                                    <ExclamationTriangleIcon className="h-4 w-4 text-warning" />
-                                </div>
-                                <div className="flex-1">
-                                    <p className="text-textPrimary text-sm">{reason}</p>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
+                <DetailedFilters detailedFilters={result.detailed_filters} />
 
-            {/* LLM Response */}
-            {result.response && (
-                <div className="bg-card rounded-xl p-6 border border-border">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-textPrimary">LLM Response</h3>
-                        <div className="flex items-center space-x-2">
-                            <EyeIcon className="h-4 w-4 text-textMuted" />
-                            <span className="text-sm text-textMuted">Generated Content</span>
+                {/* Raw Data Display */}
+                {showRawData && (
+                    <div className="mt-6 border-t border-border pt-6">
+                        <h4 className="text-sm font-medium text-textPrimary mb-3">Raw Filter Data</h4>
+                        <div className="bg-background text-secondary p-4 rounded-lg overflow-x-auto border border-border">
+                            <pre className="text-xs font-mono">
+                                {JSON.stringify(result.filter_results, null, 2)}
+                            </pre>
                         </div>
                     </div>
-                    <div className="bg-background rounded-lg p-4 border border-border">
-                        <div className="flex items-start space-x-3">
-                            <DocumentIcon className="h-5 w-5 text-primary flex-shrink-0 mt-1" />
-                            <p className="text-textPrimary whitespace-pre-wrap text-sm leading-relaxed">{result.response}</p>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Status Alerts */}
-            {result.decision === 'BLOCK' && (
-                <div className="bg-danger/10 border border-danger/30 rounded-xl p-6">
-                    <div className="flex items-start space-x-3">
-                        <div className="w-8 h-8 bg-danger rounded-full flex items-center justify-center flex-shrink-0">
-                            <XCircleIcon className="h-5 w-5 text-white" />
-                        </div>
-                        <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-danger mb-2">Content Blocked</h3>
-                            <p className="text-textPrimary mb-4">
-                                This prompt has been blocked due to security policy violations and was not processed by the LLM.
-                            </p>
-                            {result.reasons && result.reasons.length > 0 && (
-                                <div className="bg-background/50 rounded-lg p-3">
-                                    <p className="text-textMuted text-sm font-medium mb-2">Violation Details:</p>
-                                    <ul className="space-y-1">
-                                        {result.reasons.map((reason, index) => (
-                                            <li key={index} className="flex items-center space-x-2 text-sm text-textPrimary">
-                                                <div className="w-1.5 h-1.5 bg-danger rounded-full"></div>
-                                                <span>{reason}</span>
-                                            </li>
-                                        ))}
-                                    </ul>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {result.decision === 'SANITIZE' && (
-                <div className="bg-warning/10 border border-warning/30 rounded-xl p-6">
-                    <div className="flex items-start space-x-3">
-                        <div className="w-8 h-8 bg-warning text-black rounded-full flex items-center justify-center flex-shrink-0">
-                            <ExclamationTriangleIcon className="h-5 w-5" />
-                        </div>
-                        <div className="flex-1">
-                            <h3 className="text-lg font-semibold text-warning mb-2">Content Sanitized</h3>
-                            <p className="text-textPrimary mb-4">
-                                The prompt was automatically modified to remove potentially harmful content before processing.
-                            </p>
-
-                            {result.original_prompt && result.processed_prompt && (
-                                <div className="space-y-3">
-                                    <div className="bg-background/50 rounded-lg p-3">
-                                        <p className="text-textMuted text-sm font-medium mb-2">Original Prompt:</p>
-                                        <p className="text-textPrimary text-sm font-mono bg-background rounded p-2 border border-border">
-                                            {result.original_prompt}
-                                        </p>
-                                    </div>
-
-                                    <div className="bg-background/50 rounded-lg p-3">
-                                        <p className="text-textMuted text-sm font-medium mb-2">Sanitized Prompt:</p>
-                                        <p className="text-textPrimary text-sm font-mono bg-background rounded p-2 border border-border">
-                                            {result.processed_prompt}
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
+                )}
+            </div>
         </div>
     );
 };
 
 export default ResultPanel;
-
-
-
-
-
-
-
-
-
-
-
-
-// import React from 'react';
-// import {
-//     CheckCircleIcon,
-//     ExclamationTriangleIcon,
-//     XCircleIcon,
-//     ClockIcon,
-//     ShieldCheckIcon,
-//     ChartBarIcon
-// } from '@heroicons/react/24/outline';
-
-// const ResultPanel = ({ result, isLoading }) => {
-//     if (isLoading) {
-//         return (
-//             <div className="bg-card-bg rounded-xl p-6 border border-border-color">
-//                 <div className="flex items-center justify-center h-64">
-//                     <div className="text-center space-y-4">
-//                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-accent mx-auto"></div>
-//                         <div className="space-y-2">
-//                             <p className="text-text-primary font-medium">Analyzing prompt safety...</p>
-//                             <p className="text-text-muted text-sm">Running security filters and ML models</p>
-//                         </div>
-//                     </div>
-//                 </div>
-//             </div>
-//         );
-//     }
-
-//     if (!result) {
-//         return (
-//             <div className="bg-card-bg rounded-xl p-6 border border-border-color border-dashed">
-//                 <div className="text-center py-12">
-//                     <ShieldCheckIcon className="h-16 w-16 text-text-muted mx-auto mb-4" />
-//                     <p className="text-text-muted text-lg">Enter a prompt above to start safety analysis</p>
-//                     <p className="text-text-muted text-sm mt-2">Our AI safety gateway will check for potential risks</p>
-//                 </div>
-//             </div>
-//         );
-//     }
-
-//     const getDecisionBadge = (decision) => {
-//         const badges = {
-//             'ALLOW': {
-//                 color: 'bg-secondary-accent text-white',
-//                 icon: CheckCircleIcon,
-//                 glow: 'shadow-glow-green'
-//             },
-//             'SANITIZE': {
-//                 color: 'bg-warning-color text-white',
-//                 icon: ExclamationTriangleIcon,
-//                 glow: 'shadow-lg'
-//             },
-//             'BLOCK': {
-//                 color: 'bg-danger-color text-white',
-//                 icon: XCircleIcon,
-//                 glow: 'shadow-glow-red'
-//             }
-//         };
-
-//         const badge = badges[decision] || badges['BLOCK'];
-//         const Icon = badge.icon;
-
-//         return (
-//             <div className={`inline-flex items-center space-x-2 px-4 py-2 rounded-full ${badge.color} ${badge.glow}`}>
-//                 <Icon className="h-5 w-5" />
-//                 <span className="font-semibold">{decision}</span>
-//             </div>
-//         );
-//     };
-
-//     const getRiskScoreColor = (score) => {
-//         if (score >= 0.7) return 'bg-danger-color';
-//         if (score >= 0.4) return 'bg-warning-color';
-//         return 'bg-secondary-accent';
-//     };
-
-//     const getRiskLevel = (score) => {
-//         if (score >= 0.8) return 'CRITICAL';
-//         if (score >= 0.6) return 'HIGH';
-//         if (score >= 0.4) return 'MEDIUM';
-//         if (score >= 0.2) return 'LOW';
-//         return 'MINIMAL';
-//     };
-
-//     return (
-//         <div className="space-y-6">
-//             {/* Main Result Card */}
-//             <div className="bg-card-bg rounded-xl p-6 border border-border-color">
-//                 <div className="flex items-center justify-between mb-6">
-//                     <h2 className="text-xl font-semibold text-text-primary">Analysis Result</h2>
-//                     <div className="flex items-center space-x-4">
-//                         {result.latency_ms && (
-//                             <div className="flex items-center space-x-1 text-text-muted">
-//                                 <ClockIcon className="h-4 w-4" />
-//                                 <span className="text-sm">{result.latency_ms}ms</span>
-//                             </div>
-//                         )}
-//                         {getDecisionBadge(result.decision)}
-//                     </div>
-//                 </div>
-
-//                 {/* Risk Score Section */}
-//                 <div className="space-y-4">
-//                     <div className="flex items-center justify-between">
-//                         <span className="text-text-primary font-medium">Risk Score</span>
-//                         <div className="flex items-center space-x-2">
-//                             <span className="text-2xl font-bold text-text-primary">
-//                                 {(result.risk_score * 100).toFixed(1)}%
-//                             </span>
-//                             <span className={`px-2 py-1 rounded text-xs font-semibold ${result.risk_score >= 0.7 ? 'bg-danger-color text-white' :
-//                                     result.risk_score >= 0.4 ? 'bg-warning-color text-white' :
-//                                         'bg-secondary-accent text-white'
-//                                 }`}>
-//                                 {getRiskLevel(result.risk_score)}
-//                             </span>
-//                         </div>
-//                     </div>
-
-//                     {/* Progress Bar */}
-//                     <div className="w-full bg-border-color rounded-full h-3">
-//                         <div
-//                             className={`h-3 rounded-full transition-all duration-500 ${getRiskScoreColor(result.risk_score)}`}
-//                             style={{ width: `${Math.max(result.risk_score * 100, 2)}%` }}
-//                         ></div>
-//                     </div>
-
-//                     {/* Risk Level Indicators */}
-//                     <div className="flex justify-between text-xs text-text-muted">
-//                         <span>Safe</span>
-//                         <span>Low</span>
-//                         <span>Medium</span>
-//                         <span>High</span>
-//                         <span>Critical</span>
-//                     </div>
-//                 </div>
-
-//                 {/* Detection Reasons */}
-//                 {result.reasons && result.reasons.length > 0 && (
-//                     <div className="mt-6 pt-6 border-t border-border-color">
-//                         <h3 className="text-lg font-medium text-text-primary mb-3">Detection Details</h3>
-//                         <div className="space-y-2">
-//                             {result.reasons.map((reason, index) => (
-//                                 <div key={index} className="flex items-start space-x-2 p-3 bg-border-color bg-opacity-50 rounded-lg">
-//                                     <ExclamationTriangleIcon className="h-5 w-5 text-warning-color mt-0.5 flex-shrink-0" />
-//                                     <span className="text-text-primary">{reason}</span>
-//                                 </div>
-//                             ))}
-//                         </div>
-//                     </div>
-//                 )}
-
-//                 {/* Filter Results */}
-//                 {result.filter_results && (
-//                     <div className="mt-6 pt-6 border-t border-border-color">
-//                         <h3 className="text-lg font-medium text-text-primary mb-3">Filter Analysis</h3>
-//                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-//                             {Object.entries(result.filter_results).map(([filterName, filterResult]) => (
-//                                 <div key={filterName} className="bg-border-color bg-opacity-30 rounded-lg p-4">
-//                                     <div className="flex items-center justify-between mb-2">
-//                                         <span className="text-text-primary font-medium capitalize">
-//                                             {filterName.replace('_', ' ')}
-//                                         </span>
-//                                         <ChartBarIcon className="h-4 w-4 text-primary-accent" />
-//                                     </div>
-//                                     <div className="space-y-1">
-//                                         <div className="flex justify-between text-sm">
-//                                             <span className="text-text-muted">Risk Score:</span>
-//                                             <span className="text-text-primary font-medium">
-//                                                 {(filterResult.risk_score * 100).toFixed(1)}%
-//                                             </span>
-//                                         </div>
-//                                         {filterResult.reason && (
-//                                             <p className="text-xs text-text-muted mt-1">{filterResult.reason}</p>
-//                                         )}
-//                                     </div>
-//                                 </div>
-//                             ))}
-//                         </div>
-//                     </div>
-//                 )}
-//             </div>
-
-//             {/* Response Panel */}
-//             {result.response && (
-//                 <div className="bg-card-bg rounded-xl p-6 border border-border-color">
-//                     <h3 className="text-lg font-semibold text-text-primary mb-4">LLM Response</h3>
-//                     <div className="bg-dark-bg rounded-lg p-4 border border-border-color">
-//                         <p className="text-text-primary whitespace-pre-wrap">{result.response}</p>
-//                     </div>
-//                 </div>
-//             )}
-
-//             {/* Blocked Content Warning */}
-//             {result.decision === 'BLOCK' && (
-//                 <div className="bg-danger-color bg-opacity-10 border border-danger-color border-opacity-30 rounded-xl p-6">
-//                     <div className="flex items-start space-x-3">
-//                         <XCircleIcon className="h-6 w-6 text-danger-color flex-shrink-0 mt-0.5" />
-//                         <div>
-//                             <h3 className="text-lg font-semibold text-danger-color mb-2">Content Blocked</h3>
-//                             <p className="text-text-primary">
-//                                 This prompt has been blocked due to security policy violations.
-//                                 The request was not forwarded to the LLM for safety reasons.
-//                             </p>
-//                             {result.reasons && result.reasons.length > 0 && (
-//                                 <div className="mt-3">
-//                                     <p className="text-text-muted text-sm mb-2">Blocked for:</p>
-//                                     <ul className="list-disc list-inside space-y-1">
-//                                         {result.reasons.map((reason, index) => (
-//                                             <li key={index} className="text-text-muted text-sm">{reason}</li>
-//                                         ))}
-//                                     </ul>
-//                                 </div>
-//                             )}
-//                         </div>
-//                     </div>
-//                 </div>
-//             )}
-
-//             {/* Sanitization Notice */}
-//             {result.decision === 'SANITIZE' && result.prompt_modified && (
-//                 <div className="bg-warning-color bg-opacity-10 border border-warning-color border-opacity-30 rounded-xl p-6">
-//                     <div className="flex items-start space-x-3">
-//                         <ExclamationTriangleIcon className="h-6 w-6 text-warning-color flex-shrink-0 mt-0.5" />
-//                         <div>
-//                             <h3 className="text-lg font-semibold text-warning-color mb-2">Content Sanitized</h3>
-//                             <p className="text-text-primary mb-3">
-//                                 The prompt was modified to remove potentially harmful content before processing.
-//                             </p>
-
-//                             {result.original_prompt && result.processed_prompt && (
-//                                 <div className="space-y-3">
-//                                     <div>
-//                                         <p className="text-text-muted text-sm mb-1">Original:</p>
-//                                         <div className="bg-dark-bg rounded p-3 border border-border-color">
-//                                             <p className="text-text-primary text-sm">{result.original_prompt}</p>
-//                                         </div>
-//                                     </div>
-
-//                                     <div>
-//                                         <p className="text-text-muted text-sm mb-1">Sanitized:</p>
-//                                         <div className="bg-dark-bg rounded p-3 border border-border-color">
-//                                             <p className="text-text-primary text-sm">{result.processed_prompt}</p>
-//                                         </div>
-//                                     </div>
-//                                 </div>
-//                             )}
-//                         </div>
-//                     </div>
-//                 </div>
-//             )}
-//         </div>
-//     );
-// };
-
-// export default ResultPanel;

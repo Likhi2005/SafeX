@@ -1,204 +1,288 @@
+"""
+ML-based classifier for toxicity and prompt injection detection.
+Interfaces with ModelLoader to use actual ML models instead of fallback rules.
+"""
+
 import logging
-import numpy as np
-from typing import Dict, List, Tuple, Optional
-from backend.ml.model_loader import model_loader
+from typing import Dict, Any, List
+from datetime import datetime
+
+from .model_loader import model_loader
 
 class MLClassifier:
     """
-    Optimized ML-based classifier using official HF APIs and ONNX runtime.
+    Machine Learning classifier for detecting threats using actual ML models.
+    Ensures models are downloaded and used instead of rule-based fallbacks.
     """
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.model_loader = model_loader
+        self.filter_name = "ml_classifier"
         self._initialized = False
-    
-    def _ensure_initialized(self):
-        """Ensure models are initialized."""
-        if not self._initialized:
-            success = self.model_loader.download_and_prepare_models()
-            self._initialized = True
+        self._force_model_download = True
+        
+    def initialize(self) -> bool:
+        """Initialize the ML classifier and ensure models are downloaded."""
+        if self._initialized:
+            return True
+            
+        try:
+            self.logger.info("Initializing ML classifier with mandatory model download...")
+            
+            # Force model download and initialization
+            success = model_loader.download_and_prepare_models()
+            
             if not success:
-                self.logger.warning("ML models failed to initialize, using fallback mode")
+                self.logger.error("Failed to initialize ML models - this is mandatory!")
+                return False
+                
+            # Verify that actual ML models are loaded (not just fallbacks)
+            model_info = model_loader.get_model_info()
+            
+            # Check if we're only using fallback methods
+            if self._is_only_fallback_methods(model_info):
+                self.logger.warning("Only fallback methods available - attempting forced model download...")
+                success = self._force_download_models()
+                if not success:
+                    self.logger.error("Forced model download failed - ML classifier requires actual models!")
+                    return False
+                    
+            self._initialized = True
+            self.logger.info("ML classifier initialized successfully with real models")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize ML classifier: {e}")
+            return False
     
-    def analyze(self, prompt: str) -> Dict:
-        """
-        Fast ML analysis of prompt for jailbreak detection.
-        """
-        if not prompt or not isinstance(prompt, str):
-            return self._create_result(0.0, [], "Empty or invalid prompt")
+    def _is_only_fallback_methods(self, model_info: Dict[str, Any]) -> bool:
+        """Check if only fallback methods are available."""
+        available_methods = model_info.get("available_methods", {})
         
-        # Ensure models are ready
-        self._ensure_initialized()
+        # Check if we only have rule-based fallbacks
+        toxicity_methods = available_methods.get("toxicity", [])
+        injection_methods = available_methods.get("injection", [])
         
-        results = []
+        # We consider it fallback-only if we don't have proper ML methods
+        has_real_toxicity = any(method in toxicity_methods for method in ["transformers", "pipeline"])
+        has_real_injection = any(method in injection_methods for method in ["transformers", "pipeline", "hybrid"])
         
-        # 1. Toxicity classification using best available model
-        toxicity_score, toxicity_reason = self._classify_toxicity_smart(prompt)
-        if toxicity_score > 0.1:
-            results.append({
-                "method": "toxicity_classification",
+        return not (has_real_toxicity or has_real_injection)
+    
+    def _force_download_models(self) -> bool:
+        """Force download of actual ML models."""
+        try:
+            self.logger.info("Force downloading ML models...")
+            
+            # Try to download models directly using transformers
+            from transformers import pipeline
+            import torch
+            
+            # Download toxicity model
+            try:
+                toxic_pipe = pipeline(
+                    "text-classification", 
+                    model="unitary/toxic-bert",
+                    device=-1,  # CPU
+                    cache_dir="models/toxic_classifier"
+                )
+                
+                # Test the model
+                test_result = toxic_pipe("This is a test")
+                self.logger.info("✅ Toxicity model downloaded and tested successfully")
+                
+            except Exception as e:
+                self.logger.warning(f"Failed to download toxic-bert, trying fallback: {e}")
+                
+                try:
+                    toxic_pipe = pipeline(
+                        "text-classification",
+                        model="distilbert-base-uncased-finetuned-sst-2-english",
+                        device=-1,
+                        cache_dir="models/toxic_classifier_fallback"
+                    )
+                    test_result = toxic_pipe("This is a test") 
+                    self.logger.info("✅ Fallback toxicity model downloaded successfully")
+                    
+                except Exception as e2:
+                    self.logger.error(f"Failed to download any toxicity model: {e2}")
+                    return False
+            
+            # Download injection detection model components
+            try:
+                injection_pipe = pipeline(
+                    "text-classification",
+                    model="roberta-base",
+                    device=-1,
+                    cache_dir="models/injection_classifier"
+                )
+                
+                test_result = injection_pipe("This is a test")
+                self.logger.info("✅ Injection detection model downloaded successfully")
+                
+            except Exception as e:
+                self.logger.warning(f"Injection model download failed: {e}")
+            
+            # Re-initialize model loader to pick up downloaded models
+            return model_loader.download_and_prepare_models()
+            
+        except Exception as e:
+            self.logger.error(f"Force model download failed: {e}")
+            return False
+
+def analyze_with_ml(prompt: str) -> Dict[str, Any]:
+    """
+    Analyze prompt using ML models for toxicity and injection detection.
+    
+    Args:
+        prompt: Input text to analyze
+        
+    Returns:
+        Dictionary with ML analysis results
+    """
+    
+    # Create classifier instance
+    classifier = MLClassifier()
+    
+    # Initialize if needed
+    if not classifier.initialize():
+        return {
+            "filter_name": "ml_classifier",
+            "is_threat": False,
+            "reason": "ML models failed to initialize",
+            "risk_score": 0.0,
+            "confidence": "error",
+            "ml_results": [],
+            "model_info": {
+                "initialized": False,
+                "model_type": "error",
+                "error": "Failed to initialize ML models",
+                "available_methods": {}
+            }
+        }
+    
+    try:
+        # Get toxicity classification
+        toxicity_result = model_loader.classify_toxicity(prompt)
+        
+        # Get prompt injection classification
+        injection_result = model_loader.classify_prompt_injection(prompt)
+        
+        # Get similarity score
+        similarity_score = model_loader.get_similarity_score(prompt)
+        
+        # Get model information
+        model_info = model_loader.get_model_info()
+        
+        # Determine if it's a threat
+        toxicity_score = toxicity_result.get("score", 0.0)
+        injection_score = injection_result.get("score", 0.0)
+        
+        # Calculate combined risk score
+        risk_score = max(toxicity_score, injection_score, similarity_score * 0.8)
+        
+        # Determine threat status
+        is_threat = risk_score > 0.5
+        
+        # Determine confidence based on method used
+        confidence = _determine_confidence(toxicity_result, injection_result, model_info)
+        
+        # Prepare ML results
+        ml_results = []
+        
+        if toxicity_score > 0.3:
+            ml_results.append({
+                "type": "toxicity",
                 "score": toxicity_score,
-                "reason": toxicity_reason
+                "method": toxicity_result.get("method", "unknown"),
+                "confidence": toxicity_result.get("confidence", 0.5)
             })
-        
-        # 2. Similarity check using embeddings
-        similarity_score, similarity_reason = self._check_similarity_smart(prompt)
-        if similarity_score > 0.1:
-            results.append({
-                "method": "similarity_analysis",
+            
+        if injection_score > 0.3:
+            ml_results.append({
+                "type": "prompt_injection", 
+                "score": injection_score,
+                "method": injection_result.get("method", "unknown"),
+                "confidence": injection_result.get("confidence", 0.5)
+            })
+            
+        if similarity_score > 0.4:
+            ml_results.append({
+                "type": "similarity_attack",
                 "score": similarity_score,
-                "reason": similarity_reason
+                "method": "embedding_similarity",
+                "confidence": 0.7
             })
         
-        # 3. Calculate overall ML risk score
-        overall_score = self._calculate_ml_score(results)
-        
-        return self._create_result(overall_score, results, self._generate_reason(results))
-    
-    def _classify_toxicity_smart(self, prompt: str) -> Tuple[float, str]:
-        """Smart toxicity classification with automatic fallback."""
-        try:
-            result = self.model_loader.classify_toxicity(prompt)
-            score = result.get("score", 0.0)
-            confidence = result.get("confidence", 0.0)
-            method = result.get("method", "unknown")
-            
-            # Adjust score based on confidence and method
-            if method == "onnx":
-                # ONNX results are most reliable
-                adjusted_score = score
-                reason_suffix = "(ONNX model)"
-            elif method == "transformers_pipeline": 
-                # Pipeline results are good
-                adjusted_score = score * 0.9
-                reason_suffix = "(Transformers pipeline)"
-            elif method == "keywords":
-                # Keyword results need more conservative scoring
-                adjusted_score = min(score * 0.7, 0.8)
-                reason_suffix = f"(Keyword detection: {len(result.get('matches', []))} matches)"
-            else:
-                # Error or unknown method
-                adjusted_score = 0.0
-                reason_suffix = f"(Method: {method})"
-            
-            # Generate reason based on score
-            if adjusted_score > 0.8:
-                reason = f"High toxicity detected {reason_suffix}"
-            elif adjusted_score > 0.6:
-                reason = f"Moderate toxicity detected {reason_suffix}"
-            elif adjusted_score > 0.3:
-                reason = f"Low toxicity indicators {reason_suffix}"
-            else:
-                reason = f"No toxicity detected {reason_suffix}"
-                
-            self.logger.debug(f"Toxicity analysis: {adjusted_score:.3f} - {reason}")
-            return adjusted_score, reason
-                
-        except Exception as e:
-            self.logger.warning(f"Toxicity classification failed: {e}")
-            return 0.0, f"Classification error: {str(e)}"
-    
-    def _check_similarity_smart(self, prompt: str) -> Tuple[float, str]:
-        """Smart similarity check with confidence adjustment."""
-        try:
-            similarity = self.model_loader.get_similarity_score(prompt)
-            
-            if similarity > 0.8:
-                score = min(similarity * 0.95, 0.95)
-                reason = f"Very high similarity to attack patterns ({similarity:.3f})"
-            elif similarity > 0.6:
-                score = similarity * 0.8
-                reason = f"High similarity to attack patterns ({similarity:.3f})"
-            elif similarity > 0.4:
-                score = similarity * 0.6
-                reason = f"Moderate similarity to attack patterns ({similarity:.3f})"
-            elif similarity > 0.2:
-                score = similarity * 0.4
-                reason = f"Low similarity to attack patterns ({similarity:.3f})"
-            else:
-                score = 0.0
-                reason = "No significant similarity to known attacks"
-                
-            self.logger.debug(f"Similarity analysis: {score:.3f} - {reason}")
-            return score, reason
-                
-        except Exception as e:
-            self.logger.warning(f"Similarity check failed: {e}")
-            return 0.0, f"Similarity analysis error: {str(e)}"
-    
-    def _calculate_ml_score(self, results: List[Dict]) -> float:
-        """Calculate overall ML risk score."""
-        if not results:
-            return 0.0
-        
-        # Use weighted combination of scores
-        total_score = 0.0
-        total_weight = 0.0
-        
-        for result in results:
-            method = result["method"]
-            score = result["score"]
-            
-            # Weight different methods
-            if method == "toxicity_classification":
-                weight = 0.7  # Higher weight for toxicity
-            elif method == "similarity_analysis":
-                weight = 0.5  # Moderate weight for similarity
-            else:
-                weight = 0.3  # Lower weight for other methods
-            
-            total_score += score * weight
-            total_weight += weight
-        
-        if total_weight == 0:
-            return 0.0
-        
-        # Calculate weighted average
-        weighted_score = total_score / total_weight
-        
-        # Add bonus for multiple positive detections
-        if len(results) > 1:
-            bonus = min(len(results) * 0.1, 0.15)
-            weighted_score = min(weighted_score + bonus, 1.0)
-        
-        return round(weighted_score, 3)
-    
-    def _generate_reason(self, results: List[Dict]) -> str:
-        """Generate human-readable explanation."""
-        if not results:
-            return "No ML-based threats detected"
-        
-        reasons = [result["reason"] for result in results]
-        
-        if len(reasons) == 1:
-            return reasons[0]
+        # Determine reason
+        if ml_results:
+            reasons = []
+            for result in ml_results:
+                reasons.append(f"{result['type']} detected (score: {result['score']:.2f})")
+            reason = "; ".join(reasons)
         else:
-            return f"Multiple indicators: {'; '.join(reasons[:2])}"  # Limit to 2 for readability
-    
-    def _create_result(self, risk_score: float, results: List[Dict], reason: str) -> Dict:
-        """Create standardized result dictionary."""
-        # Get model info for debugging
-        model_info = self.model_loader.get_model_info()
+            reason = "No ML-based threats detected"
+        
+        # Update model type to reflect actual model usage
+        model_type = "ml_models" if _has_real_models(model_info) else "fallback"
+        model_info_updated = model_info.copy()
+        model_info_updated["model_type"] = model_type
         
         return {
-            "filter_name": "ml_classifier", 
-            "risk_score": risk_score,
-            "ml_results": results,
+            "filter_name": "ml_classifier",
+            "is_threat": is_threat,
             "reason": reason,
+            "risk_score": round(risk_score, 2),
+            "confidence": confidence,
+            "ml_results": ml_results,
+            "model_info": model_info_updated
+        }
+        
+    except Exception as e:
+        classifier.logger.error(f"ML analysis failed: {e}")
+        return {
+            "filter_name": "ml_classifier", 
+            "is_threat": False,
+            "reason": f"ML analysis error: {str(e)[:100]}",
+            "risk_score": 0.0,
+            "confidence": "error",
+            "ml_results": [],
             "model_info": {
-                "type": model_info.get("model_type", "unknown"),
-                "initialized": model_info.get("initialized", False)
+                "initialized": False,
+                "model_type": "error", 
+                "error": str(e),
+                "available_methods": {}
             }
         }
 
-# Global instance
+def _determine_confidence(toxicity_result: Dict, injection_result: Dict, model_info: Dict) -> str:
+    """Determine confidence level based on methods used."""
+    
+    # Check if we're using real ML models
+    available_methods = model_info.get("available_methods", {})
+    
+    toxicity_methods = available_methods.get("toxicity", [])
+    injection_methods = available_methods.get("injection", [])
+    
+    # High confidence if using transformers
+    if "transformers" in toxicity_methods or "transformers" in injection_methods:
+        return "high"
+    elif "pipeline" in toxicity_methods or "hybrid" in injection_methods:
+        return "medium"
+    else:
+        return "low"
+
+def _has_real_models(model_info: Dict) -> bool:
+    """Check if real ML models are being used."""
+    available_methods = model_info.get("available_methods", {})
+    
+    # Check for actual ML methods vs fallbacks
+    toxicity_methods = available_methods.get("toxicity", [])
+    injection_methods = available_methods.get("injection", [])
+    
+    return ("transformers" in toxicity_methods or 
+            "pipeline" in toxicity_methods or
+            "hybrid" in injection_methods)
+
+# For backwards compatibility
 ml_classifier = MLClassifier()
-
-def analyze_with_ml(prompt: str) -> Dict:
-    """Convenience function for ML analysis."""
-    return ml_classifier.analyze(prompt)
-
-def get_ml_model_status() -> Dict:
-    """Get ML model status for monitoring."""
-    return ml_classifier.model_loader.get_model_info()

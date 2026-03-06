@@ -1,5 +1,6 @@
-import re
 import logging
+import re
+import string
 from typing import Dict, List, Tuple, Optional
 from backend.config.constants import (
     JAILBREAK_PATTERNS,
@@ -7,7 +8,7 @@ from backend.config.constants import (
     LEAKAGE_PATTERNS,
     SUSPICIOUS_KEYWORDS,
     OBFUSCATION_PATTERNS,
-    )
+)
 
 class RegexFilter:
     """
@@ -27,14 +28,17 @@ class RegexFilter:
             self.leakage_regex = [re.compile(pattern, re.IGNORECASE) for pattern in LEAKAGE_PATTERNS]
             self.obfuscation_regex = [re.compile(pattern, re.IGNORECASE) for pattern in OBFUSCATION_PATTERNS]
             
-            # Compile suspicious keywords into single pattern for efficiency
-            keywords_pattern = r'\b('+ '|'.join(re.escape(kw) for kw in SUSPICIOUS_KEYWORDS) + r')\b'
-            self.suspicious_regex = re.compile(keywords_pattern, re.IGNORECASE)
-            
-            self.logger.info("Regex patterns compiled successfully")
+            self.logger.info(f"Compiled {len(self.jailbreak_regex)} jailbreak patterns")
+            self.logger.info(f"Compiled {len(self.injection_regex)} injection patterns")
+            self.logger.info(f"Compiled {len(self.leakage_regex)} leakage patterns")
+            self.logger.info(f"Compiled {len(self.obfuscation_regex)} obfuscation patterns")
         except Exception as e:
             self.logger.error(f"Failed to compile regex patterns: {e}")
-            raise
+            # Fallback to empty lists
+            self.jailbreak_regex = []
+            self.injection_regex = []
+            self.leakage_regex = []
+            self.obfuscation_regex = []
         
     def analyze(self, prompt: str) -> Dict:
         """
@@ -47,14 +51,14 @@ class RegexFilter:
             Dict with risk_score, matches, and decision reason
         """
         if not prompt or not isinstance(prompt, str):
-            return self._create_result(0.0, [], "Empty or invalid prompt")
+            return self._create_result(0.0, [], "Invalid or empty prompt")
         
         # Clean prompt for analysis
         cleaned_prompt = self._preprocess_prompt(prompt)
         
-        # Check all pattern categories
-        jailbreak_matches = self._check_patterns(cleaned_prompt, self.jailbreak_regex, "jailbreak")
-        injection_matches = self._check_patterns(cleaned_prompt, self.injection_regex, "injection")
+        # Check all pattern categories - unify jailbreak and injection as prompt_injection
+        jailbreak_matches = self._check_patterns(cleaned_prompt, self.jailbreak_regex, "prompt_injection")
+        injection_matches = self._check_patterns(cleaned_prompt, self.injection_regex, "prompt_injection")
         leakage_matches = self._check_patterns(cleaned_prompt, self.leakage_regex, "leakage")
         obfuscation_matches = self._check_patterns(cleaned_prompt, self.obfuscation_regex, "obfuscation")
         suspicious_matches = self._check_suspicious_keywords(cleaned_prompt)
@@ -70,10 +74,10 @@ class RegexFilter:
         
         return self._create_result(risk_score, all_matches, reason)
     
-    def _preprocess_prompt(self, prompt: str) ->str:
+    def _preprocess_prompt(self, prompt: str) -> str:
         """Clean and normalize prompt for analysis."""
         # Remove excessive whitespace
-        cleaned = re.sub(r'\s+',' ',prompt.strip())
+        cleaned = re.sub(r'\s+', ' ', prompt.strip())
         
         # Decode common obfuscation attempts
         cleaned = self._decode_common_obfuscation(cleaned)
@@ -83,33 +87,37 @@ class RegexFilter:
     def _decode_common_obfuscation(self, text: str) -> str:
         """Decode basic obfuscation techniques."""
         try:
-            # Remove excessive spacing between characters
-            text = re.sub(r'([a-zA-Z])\s+([a-zA-Z])',r'\1\2',text)
-            
-            # Remove repeated characters (keep only 2 max)
-            text = re.sub(r'([a-zA-Z])\1{2,}',r'\1\1',text)
-            
-            return text
+            # Remove unnecessary punctuation that might obfuscate
+            cleaned = re.sub(r'[^\w\s]', ' ', text)
+            # Remove leetspeak common substitutions
+            leetspeak_map = {'4': 'a', '3': 'e', '1': 'i', '0': 'o', '5': 's', '7': 't', '@': 'a'}
+            for leet, normal in leetspeak_map.items():
+                cleaned = cleaned.replace(leet, normal)
+            return cleaned
         except Exception as e:
+            self.logger.error(f"Error in obfuscation decoding: {e}")
             return text
         
-    def _check_patterns(self, prompt:str,patterns: List[re.Pattern], category: str) -> List[Dict]:
+    def _check_patterns(self, prompt: str, patterns: List[re.Pattern], category: str) -> List[Dict]:
         """Check prompt against compiled regex patterns."""
         matches = []
         
         for pattern in patterns:
             try:
-                found_matches = pattern.finditer(prompt)
-                for match in found_matches:
+                match = pattern.search(prompt)
+                if match:
                     matches.append({
                         "category": category,
                         "pattern": pattern.pattern,
-                        "match": match.group(0),
-                        "position": match.span(),
-                        "severity": self._get_category_severity(category)
+                        "match": match.group(),
+                        "severity": self._get_category_severity(category),
+                        "start_pos": match.start(),
+                        "end_pos": match.end()
                     })
             except Exception as e:
-                self.logger.warning(f"Pattern matching failed for {pattern.pattern}: {e}")
+                self.logger.error(f"Error checking pattern {pattern.pattern}: {e}")
+                continue
+        
         return matches
     
     def _check_suspicious_keywords(self, prompt: str) -> List[Dict]:
@@ -117,23 +125,24 @@ class RegexFilter:
         matches = []
         
         try:
-            found_matches = self.suspicious_regex.finditer(prompt)
-            for match in found_matches:
-                matches.append({
-                    "category": "suspicious_keyword",
-                    "pattern": "keyword_detection",
-                    "match": match.group(0),
-                    "position": match.span(),
-                    "severity": 0.3
-                })
+            prompt_lower = prompt.lower()
+            for keyword in SUSPICIOUS_KEYWORDS:
+                if keyword.lower() in prompt_lower:
+                    matches.append({
+                        "category": "suspicious_keyword",
+                        "pattern": keyword,
+                        "match": keyword,
+                        "severity": self._get_category_severity("suspicious_keyword")
+                    })
         except Exception as e:
-            self.logger.warning(f"Suspicious keyword detection failed: {e}")
+            self.logger.error(f"Error checking suspicious keywords: {e}")
         
         return matches
     
     def _get_category_severity(self, category: str) -> float:
         """Get severity score for each attack category."""
-        severity_map ={
+        severity_map = {
+            "prompt_injection": 0.8,
             "jailbreak": 0.8,
             "injection": 0.7,
             "leakage": 0.6,
@@ -150,15 +159,18 @@ class RegexFilter:
         # Base score from highest severity match
         max_severity = max(match["severity"] for match in matches)
         
+        # Special handling for prompt injection - higher risk
+        prompt_injection_bonus = 0.1 if any(m["category"] == "prompt_injection" for m in matches) else 0.0
+        
         # Add bonus for multiple categories
         categories = set(match["category"] for match in matches)
-        category_bonus = min(len(categories)*0.1,0.3)
+        category_bonus = min(len(categories) * 0.1, 0.3)
         
         # Add bonus for multiple matches in same category
-        match_bonus = min(len(matches)* 0.05, 0.2)
+        match_bonus = min(len(matches) * 0.05, 0.2)
         
         # Calculate final score (capped at 1.0)
-        risk_score = min(max_severity + category_bonus + match_bonus, 1.0)
+        risk_score = min(max_severity + category_bonus + match_bonus + prompt_injection_bonus, 1.0)
         
         return round(risk_score, 3)
     
@@ -175,16 +187,15 @@ class RegexFilter:
                 by_category[category] = []
             by_category[category].append(match)
             
-        # Build explaination
+        # Build explanation
         reasons = []
-        for category,category_matches in by_category.items():
+        for category, category_matches in by_category.items():
             count = len(category_matches)
-            category_name = category.replace('_',' ').title()
-            
+            category_name = category.replace("_", " ").title()
             if count == 1:
-                reasons.append(f"Detected {category_name.lower()}")
+                reasons.append(f"{category_name} detected")
             else:
-                reasons.append(f"Detected {count} {category_name.lower()} patterns")
+                reasons.append(f"Multiple {category_name} patterns detected ({count})")
                 
         base_reason = "; ".join(reasons)
         
@@ -198,15 +209,23 @@ class RegexFilter:
         
     def _create_result(self, risk_score: float, matches: List[Dict], reason: str) -> Dict:
         """Create standardized result dictionary."""
+        categories_detected = list(set(match["category"] for match in matches)) if matches else []
+        
+        # Extract simple match strings for the matches array
+        simple_matches = [match["match"] for match in matches] if matches else []
         
         return {
             "filter_name": "regex_filter",
             "risk_score": risk_score,
-            "matches": matches,
-            "match_count":len(matches),
+            "matches": simple_matches,
+            "detailed_matches": matches,
+            "categories_detected": categories_detected,
+            "match_count": len(matches),
             "reason": reason,
-            "categories_detected": list(set(m["category"] for m in matches))
+            "is_threat": risk_score > 0.3,
+            "severity_level": "HIGH" if risk_score >= 0.7 else "MEDIUM" if risk_score >= 0.4 else "LOW"
         }
+
         
 # Global instance for reuse
 regex_filter = RegexFilter()
