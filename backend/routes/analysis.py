@@ -1,12 +1,177 @@
 from flask import Blueprint, jsonify, request, current_app
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from backend.core.security_pipeline import analyze_prompt_security
 
-analysis_bp = Blueprint('analysis', __name__, url_prefix='/api/v1')
+from backend.models.threat_log import ThreatLog
+from backend.services.threat_service import ThreatLogService
+
+# Add SQLAlchemy imports for the trends endpoint
+from backend.models import db
+from sqlalchemy import func, cast, Date
+
+# analysis_bp = Blueprint('analysis', __name__, url_prefix='/api/v1')
+analysis_bp = Blueprint('analysis', __name__)
 logger = logging.getLogger(__name__)
 
-@analysis_bp.route('/analyze', methods=['POST'])
+
+
+
+@analysis_bp.route('/api/threat-trends', methods=['GET'])  # Keep /api/ in route
+def get_threat_trends():
+    """Get threat trends over time for charts using real database data."""
+    try:
+        days = int(request.args.get('days', 7))
+        
+        # Input validation
+        if days < 1 or days > 365:
+            return jsonify({
+                'status': 'error',
+                'message': 'Days parameter must be between 1 and 365'
+            }), 400
+        
+        # Calculate date range
+        end_date = datetime.utcnow().replace(hour=23, minute=59, second=59, microsecond=999999)
+        start_date = (end_date - timedelta(days=days-1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        logger.info(f"Fetching threat trends from {start_date} to {end_date} ({days} days)")
+        
+        # PostgreSQL-compatible query to group by date
+        daily_query = db.session.query(
+            cast(ThreatLog.created_at, Date).label('date'),
+            func.count(ThreatLog.id).label('total'),
+            func.sum(cast(ThreatLog.blocked, 'integer')).label('blocked'),
+            func.count(ThreatLog.id) - func.sum(cast(ThreatLog.blocked, 'integer')).label('allowed')
+        ).filter(
+            ThreatLog.created_at >= start_date,
+            ThreatLog.created_at <= end_date
+        ).group_by(
+            cast(ThreatLog.created_at, Date)
+        ).order_by(
+            cast(ThreatLog.created_at, Date)
+        ).all()
+        
+        # Get total period statistics
+        period_totals = db.session.query(
+            func.count(ThreatLog.id).label('total_requests'),
+            func.sum(cast(ThreatLog.blocked, 'integer')).label('total_blocked'),
+            func.count(ThreatLog.id) - func.sum(cast(ThreatLog.blocked, 'integer')).label('total_allowed'),
+            func.avg(ThreatLog.risk_score).label('avg_risk_score'),
+            func.avg(ThreatLog.processing_time).label('avg_processing_time')
+        ).filter(
+            ThreatLog.created_at >= start_date,
+            ThreatLog.created_at <= end_date
+        ).first()
+        
+        # Get top attack types for the period
+        top_attack_types = db.session.query(
+            ThreatLog.attack_type,
+            func.count(ThreatLog.id).label('count'),
+            func.avg(ThreatLog.risk_score).label('avg_risk')
+        ).filter(
+            ThreatLog.created_at >= start_date,
+            ThreatLog.created_at <= end_date,
+            ThreatLog.attack_type.isnot(None),
+            ThreatLog.attack_type != ''
+        ).group_by(
+            ThreatLog.attack_type
+        ).order_by(
+            func.count(ThreatLog.id).desc()
+        ).limit(10).all()
+        
+        # Create complete daily data (fill in missing days with zeros)
+        daily_data = {}
+        for row in daily_query:
+            date_str = row.date.strftime('%Y-%m-%d')
+            daily_data[date_str] = {
+                'date': date_str,
+                'total': int(row.total or 0),
+                'blocked': int(row.blocked or 0),
+                'allowed': int(row.allowed or 0),
+                'block_rate': round((row.blocked or 0) / max(row.total or 1, 1) * 100, 2)
+            }
+        
+        # Fill in missing days with zeros
+        complete_daily_counts = []
+        current_date = start_date
+        while current_date <= end_date:
+            date_str = current_date.strftime('%Y-%m-%d')
+            if date_str in daily_data:
+                complete_daily_counts.append(daily_data[date_str])
+            else:
+                complete_daily_counts.append({
+                    'date': date_str,
+                    'total': 0,
+                    'blocked': 0,
+                    'allowed': 0,
+                    'block_rate': 0.0
+                })
+            current_date += timedelta(days=1)
+        
+        # Prepare period statistics
+        total_requests = int(period_totals.total_requests or 0)
+        total_blocked = int(period_totals.total_blocked or 0)
+        total_allowed = int(period_totals.total_allowed or 0)
+        
+        period_stats = {
+            'requests': total_requests,
+            'blocked': total_blocked,
+            'allowed': total_allowed,
+            'block_rate': round(total_blocked / max(total_requests, 1) * 100, 2) if total_requests > 0 else 0.0,
+            'avg_risk_score': round(float(period_totals.avg_risk_score or 0), 3),
+            'avg_processing_time': round(float(period_totals.avg_processing_time or 0) * 1000, 2)  # Convert to ms
+        }
+        
+        # Prepare attack types data
+        attack_types_data = [
+            {
+                'type': row.attack_type,
+                'count': int(row.count),
+                'avg_risk': round(float(row.avg_risk or 0), 3),
+                'percentage': round(row.count / max(total_requests, 1) * 100, 2) if total_requests > 0 else 0.0
+            }
+            for row in top_attack_types
+        ]
+        
+        trends_response = {
+            'daily_counts': complete_daily_counts,
+            'total_period': period_stats,
+            'top_attack_types': attack_types_data,
+            'date_range': {
+                'start': start_date.strftime('%Y-%m-%d'),
+                'end': end_date.strftime('%Y-%m-%d'),
+                'days': days
+            }
+        }
+        
+        logger.info(f"Threat trends retrieved: {total_requests} total requests over {days} days")
+        
+        return jsonify({
+            'status': 'success',
+            'trends': trends_response,
+            'period_days': days,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }), 200
+        
+    except ValueError as ve:
+        logger.warning(f"Invalid parameter in threat trends: {ve}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Invalid parameters provided'
+        }), 400
+        
+    except Exception as e:
+        logger.error(f"Failed to get threat trends: {e}")
+        db.session.rollback()
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to fetch threat trends',
+            'details': str(e) if current_app.debug else 'Contact administrator'
+        }), 500
+        
+        
+
+@analysis_bp.route('/api/analyze', methods=['POST'])
 def analyze_prompt():
     """
     Enhanced security analysis endpoint with detailed filter results.
@@ -93,7 +258,7 @@ def analyze_prompt():
             "details": str(e) if current_app.debug else "Contact administrator"
         }), 500
 
-@analysis_bp.route('/analyze/filters', methods=['POST'])
+@analysis_bp.route('/api//analyze/filters', methods=['POST'])
 def analyze_filters_detailed():
     """
     Get detailed filter breakdown for a prompt.
@@ -290,3 +455,42 @@ def calculate_overall_confidence(detailed_filters):
         return 'medium'
     else:
         return 'low'
+    
+@analysis_bp.route('/api/threats', methods=['GET'])  
+def get_threats():
+    """Get recent threat logs - this endpoint was missing!"""
+    try:
+        limit = request.args.get('limit', 100, type=int)
+        threats = ThreatLogService.get_recent_threats(limit=limit)
+        
+        return jsonify({
+            'status': 'success',
+            'threats': [threat.to_dict() for threat in threats],
+            'count': len(threats)
+        })
+        
+    except Exception as e:
+        logger.error(f"Get threats error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to fetch threats'
+        }), 500
+
+@analysis_bp.route('/api/threat-stats', methods=['GET'])
+def get_threat_statistics():
+    """Get threat analysis statistics - this endpoint was missing!"""
+    try:
+        stats = ThreatLogService.get_threat_stats()
+        
+        return jsonify({
+            'status': 'success',
+            'statistics': stats,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Get threat stats error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to fetch statistics'
+        }), 500

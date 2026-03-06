@@ -5,17 +5,25 @@ import os
 from datetime import datetime, timezone
 from typing import Dict, Any
 
+
+
+# Database imports
+from backend.models import init_db, db
+from backend.models.threat_log import ThreatLog
+from backend.services.threat_service import ThreatLogService
+from backend.config.database import DatabaseConfig
+
+# Model Initializer
+from backend.ml.model_initializer import model_initializer
+
 def create_app():
     """Application factory pattern for Flask app."""
     app = Flask(__name__)
     
-    # Configure CORS
-    CORS(app, 
-         origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000"],
-         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-         allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
-         supports_credentials=True)
     
+    # -------------------------
+    # Configure logging FIRST
+    # -------------------------
     # Configure logging
     os.makedirs('logs', exist_ok=True)
     logging.basicConfig(
@@ -28,6 +36,45 @@ def create_app():
     )
     logger = logging.getLogger(__name__)
     
+    
+    
+    # -------------------------
+    # Database config
+    # -------------------------
+    app.config.from_object(DatabaseConfig)
+    
+    # Initialize database
+    init_db(app)
+    
+    # Create tables immediately in app context (Flask 3.x compatible)
+    with app.app_context():
+        try:
+            db.create_all()
+            logger.info("Database tables created successfully")
+        except Exception as e:
+            logger.error(f"Failed to create database tables: {e}")
+        
+    # Configure CORS
+    CORS(app, 
+         origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000"],
+         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+         allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+         supports_credentials=True)
+    
+    
+    
+    # Database initialization
+    # @app.before_first_request
+    # def create_tables():
+    #     """Create database tables if they don't exist."""
+    #     try:
+    #         db.create_all()
+    #         logger.info("Database tables created successfully")
+    #     except Exception as e:
+    #         logger.error(f"Failed to create database tables: {e}")
+    
+    
+    
     # Initialize security system on startup (Flask 3.x compatible)
     _initialized = False
     
@@ -38,31 +85,160 @@ def create_app():
         if not _initialized:
             initialize_security_system()
             _initialized = True
+            
+    # New threat logging API endpoint
+    @app.route('/api/log-threat', methods=['POST'])
+    def log_threat():
+        """Log a threat analysis result to the database."""
+        try:
+            data = request.get_json()
+            
+            if not data:
+                return jsonify({
+                    'error': 'No JSON data provided',
+                    'status': 'error'
+                }), 400
+            
+            # Validate required fields
+            required_fields = ['prompt', 'risk_score', 'attack_type', 'blocked']
+            missing_fields = [field for field in required_fields if field not in data]
+            
+            if missing_fields:
+                return jsonify({
+                    'error': f'Missing required fields: {missing_fields}',
+                    'status': 'error'
+                }), 400
+            
+            # Create analysis result for ThreatLog
+            analysis_result = {
+                'processed_prompt': data.get('sanitized_prompt'),
+                'primary_threat': data.get('attack_type'),
+                'risk_score': data.get('risk_score'),
+                'decision': 'BLOCK' if data.get('blocked') else 'ALLOW',
+                'model_used': data.get('model_used', 'manual_log'),
+                'processing_time_seconds': data.get('processing_time', 0.0)
+            }
+            
+            # Log to database
+            threat_log = ThreatLogService.log_threat(
+                prompt=data['prompt'],
+                analysis_result=analysis_result,
+                user_id=data.get('user_id', 'api_user'),
+                ip_address=request.remote_addr
+            )
+            
+            if threat_log:
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Threat logged successfully',
+                    'threat_id': threat_log.id,
+                    'timestamp': threat_log.created_at.isoformat()
+                }), 201
+            else:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'Failed to log threat'
+                }), 500
+                
+        except Exception as e:
+            logger.error(f"Log threat error: {e}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Internal server error',
+                'details': str(e)
+            }), 500
     
+    # Get threat logs endpoint
+    @app.route('/api/threats', methods=['GET'])
+    def get_threats():
+        """Get recent threat logs."""
+        try:
+            limit = request.args.get('limit', 100, type=int)
+            threats = ThreatLogService.get_recent_threats(limit=limit)
+            
+            return jsonify({
+                'status': 'success',
+                'threats': [threat.to_dict() for threat in threats],
+                'count': len(threats)
+            })
+            
+        except Exception as e:
+            logger.error(f"Get threats error: {e}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to fetch threats'
+            }), 500
+    
+    # Threat statistics endpoint
+    @app.route('/api/threat-stats', methods=['GET'])
+    def get_threat_statistics():
+        """Get threat analysis statistics."""
+        try:
+            stats = ThreatLogService.get_threat_stats()
+            
+            return jsonify({
+                'status': 'success',
+                'statistics': stats,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+            
+        except Exception as e:
+            logger.error(f"Get threat stats error: {e}")
+            return jsonify({
+                'status': 'error',
+                'message': 'Failed to fetch statistics'
+            }), 500
+            
     def initialize_security_system():
         """Initialize the security system."""
         try:
             logger.info("🚀 Initializing SafeX Security System v2.0.0...")
             
-            if app.debug or os.environ.get('FLASK_ENV') == 'development':
-                os.environ['SKIP_ML_MODELS'] = 'true'
-                logger.info("Development mode: Using lightweight models")
-            else:
-                logger.info("Production mode: Loading full ML models")
+            # Force ML model initialization ALWAYS (not just in production)
+            logger.info("🔄 Initializing ML models...")
+            model_success = model_initializer.initialize_all_models()
             
-            from backend.ml.model_loader import initialize_models
-            success = initialize_models()
-            
-            if success:
-                logger.info("Security system initialized successfully")
+            if not model_success:
+                logger.error("❌ ML model initialization failed!")
+                # Don't skip ML models - this is critical
+                return False
             else:
-                logger.warning("Security system initialized with limited features")
-                
-            return success
+                logger.info("✅ ML models initialized successfully")
+            
+            # Get model status for logging
+            model_status = model_initializer.get_model_status()
+            logger.info(f"📊 Model status: {model_status}")
+            
+            return True
                 
         except Exception as e:
             logger.error(f"Failed to initialize security system: {e}")
             return False
+    
+    # def initialize_security_system():
+    #     """Initialize the security system."""
+    #     try:
+    #         logger.info("🚀 Initializing SafeX Security System v2.0.0...")
+            
+    #         if app.debug or os.environ.get('FLASK_ENV') == 'development':
+    #             os.environ['SKIP_ML_MODELS'] = 'true'
+    #             logger.info("Development mode: Using lightweight models")
+    #         else:
+    #             logger.info("Production mode: Loading full ML models")
+            
+    #         from backend.ml.model_loader import initialize_models
+    #         success = initialize_models()
+            
+    #         if success:
+    #             logger.info("Security system initialized successfully")
+    #         else:
+    #             logger.warning("Security system initialized with limited features")
+                
+    #         return success
+                
+    #     except Exception as e:
+    #         logger.error(f"Failed to initialize security system: {e}")
+    #         return False
     
     # Register blueprints
     try:

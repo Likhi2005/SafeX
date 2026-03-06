@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import PromptInput from '../components/PromptInput';
 import ResultPanel from '../components/ResultPanel';
-import { analyzePromptEnhanced, analyzePrompt, checkEnhancedFeaturesAvailable } from '../services/api';
+// import { analyzePromptEnhanced, analyzePrompt, checkEnhancedFeaturesAvailable } from '../services/api';
+// Add this import to the top
+import { analyzePromptEnhanced, analyzePrompt, logThreat } from '../services/api';
 
 const SafetyCheck = () => {
     const [result, setResult] = useState(null);
@@ -64,7 +66,7 @@ const SafetyCheck = () => {
 
                     // Additional metadata
                     pipeline_version: data.pipeline_version || '2.0.0',
-                    request_id: data.request_id || `req_${Date.now()}`,
+                    // request_id: data.request_id || `req_${Date.now()}`,
 
                     // Sanitization info (if available)
                     sanitization_result: data.sanitization_result || null
@@ -82,6 +84,26 @@ const SafetyCheck = () => {
                     method: useEnhanced ? 'enhanced' : 'legacy'
                 }, ...prev.slice(0, 9)]); // Keep last 10 analyses
 
+                // *** NEW: Log to database automatically ***
+                try {
+                    const logData = {
+                        prompt: prompt,
+                        sanitized_prompt: transformedResult.processed_prompt,
+                        risk_score: transformedResult.risk_score,
+                        attack_type: data.primary_threat || 'unknown',
+                        blocked: transformedResult.decision === 'BLOCK',
+                        model_used: 'frontend_analysis',
+                        user_id: 'frontend_user',
+                        processing_time: transformedResult.processing_time_seconds
+                    };
+
+                    await logThreat(logData);
+                    console.log('Threat logged to database successfully');
+                } catch (logError) {
+                    console.warn('Failed to log threat to database:', logError);
+                    // Don't show error to user for logging failures
+                }
+
                 setError(null);
 
             } else {
@@ -92,6 +114,8 @@ const SafetyCheck = () => {
 
         } catch (err) {
             console.error('Analysis error:', err);
+            setError(err.message || 'Analysis failed');
+            setResult(null);
 
             // Provide more specific error messages
             if (err.message?.includes('timeout')) {

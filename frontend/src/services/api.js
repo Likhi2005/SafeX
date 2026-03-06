@@ -292,6 +292,103 @@ export const checkEnhancedFeaturesAvailable = async () => {
     }
 };
 
+
+
+
+// Get threat logs from database
+export const getThreatLogs = async (limit = 100) => {
+    try {
+        const response = await api.get(`/api/threats?limit=${limit}`);
+        return {
+            success: true,
+            data: response.data,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message,
+            data: null,
+        };
+    }
+};
+
+// Get threat statistics
+export const getThreatStats = async () => {
+    try {
+        const response = await api.get('/api/threat-stats');
+        return {
+            success: true,
+            data: response.data,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message,
+            data: null,
+        };
+    }
+};
+
+// Log custom threat (manual logging)
+export const logThreat = async (threatData) => {
+    try {
+        const response = await api.post('/api/log-threat', threatData);
+        return {
+            success: true,
+            data: response.data,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message,
+            data: null,
+        };
+    }
+};
+
+// Get filtered threat logs
+export const getFilteredThreatLogs = async (filters) => {
+    try {
+        const params = new URLSearchParams();
+
+        if (filters.limit) params.append('limit', filters.limit);
+        if (filters.decision) params.append('decision', filters.decision);
+        if (filters.attack_type) params.append('attack_type', filters.attack_type);
+        if (filters.user_id) params.append('user_id', filters.user_id);
+        if (filters.start_date) params.append('start_date', filters.start_date);
+        if (filters.end_date) params.append('end_date', filters.end_date);
+
+        const response = await api.get(`/api/threats?${params.toString()}`);
+        return {
+            success: true,
+            data: response.data,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message,
+            data: null,
+        };
+    }
+};
+
+// Get threat trends (daily stats for charts)
+export const getThreatTrends = async (days = 7) => {
+    try {
+        const response = await api.get(`/api/threat-trends?days=${days}`);
+        return {
+            success: true,
+            data: response.data,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message,
+            data: null,
+        };
+    }
+};
+
 export default api;
 
 

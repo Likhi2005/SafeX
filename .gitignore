@@ -113,7 +113,8 @@ secrets.json
 
 # Model files
 *.pkl
-models/
+/models/*
+!/models/.gitkeep
 
 # extra
 imp.txt

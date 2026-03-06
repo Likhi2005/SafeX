@@ -1,3 +1,6 @@
+# db imports for logging threats
+from backend.services.threat_service import ThreatLogService
+
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
@@ -103,7 +106,7 @@ class SecurityPipeline:
                            f"(risk: {policy_decision.get('risk_score'):.3f}) "
                            f"in {processing_time:.3f}s - user: {user_id}")
             
-            return self._create_success_result(
+            result = self._create_success_result(
                 original_prompt=prompt,
                 processed_prompt=final_prompt,
                 policy_decision=policy_decision,
@@ -113,10 +116,62 @@ class SecurityPipeline:
                 user_id=user_id
             )
             
+            # --- ADD THIS DATABASE LOGGING SECTION ---
+            # Log to database for analytics and monitoring
+            try:
+                # Extract attack type from filter results
+                primary_threat = self._extract_primary_threat(filter_results, policy_decision)
+                
+                # Prepare analysis result for database logging
+                db_analysis_result = {
+                    'decision': result.get('decision'),
+                    'risk_score': result.get('risk_score'),
+                    'primary_threat': primary_threat,
+                    'processed_prompt': result.get('processed_prompt'),
+                    'model_used': self._get_primary_model_used(filter_results),
+                    'processing_time_seconds': processing_time,
+                    'risk_level': result.get('risk_level'),
+                    'explanation': result.get('explanation')
+                }
+                
+                # Log to database
+                ThreatLogService.log_threat(
+                    prompt=prompt,
+                    analysis_result=db_analysis_result,
+                    user_id=user_id or 'anonymous'
+                )
+                
+                self.logger.debug(f"Threat logged to database for user: {user_id}")
+                
+            except Exception as db_error:
+                # Don't let database errors affect the security analysis
+                self.logger.error(f"Failed to log threat to database: {db_error}")
+            # --- END DATABASE LOGGING SECTION ---
+            
+            return result
+            
         except Exception as e:
             self.logger.error(f"Security pipeline failed: {e}")
             self._performance_stats["error_requests"] += 1
-            return self._create_error_result(f"Pipeline error: {str(e)}", prompt)
+            # Also log errors to database
+        try:
+            error_result = {
+                'decision': 'BLOCK',
+                'risk_score': 1.0,
+                'primary_threat': 'analysis_error',
+                'processed_prompt': None,
+                'model_used': 'error_handler',
+                'processing_time_seconds': 0.0
+            }
+            ThreatLogService.log_threat(
+                prompt=prompt,
+                analysis_result=error_result,
+                user_id=user_id or 'anonymous'
+            )
+        except Exception as db_error:
+            self.logger.error(f"Failed to log error to database: {db_error}")
+        
+        return self._create_error_result(f"Pipeline error: {str(e)}", prompt)
     
     def _validate_input(self, prompt: str) -> bool:
         """Validate input prompt."""
@@ -273,6 +328,116 @@ class SecurityPipeline:
             "pipeline_version": self.pipeline_version,
             "processing_time_seconds": 0.0
         }
+        
+        
+    def _extract_primary_threat(self, filter_results: Dict[str, Any], policy_decision: Dict) -> str:
+        """Extract the primary threat type from filter results."""
+        # Check for highest risk score filter
+        max_risk = 0.0
+        primary_threat = 'safe_content'
+        
+        for filter_name, result in filter_results.items():
+            risk_score = result.get('risk_score', 0.0)
+            if risk_score > max_risk:
+                max_risk = risk_score
+                if filter_name == 'regex_filter':
+                    # Get the first matched pattern as threat type
+                    matches = result.get('matches', [])
+                    if matches:
+                        primary_threat = f"regex_{matches[0].get('category', 'detection')}"
+                    else:
+                        primary_threat = 'regex_detection'
+                elif filter_name == 'ml_classifier':
+                    # Use ML classification result
+                    ml_results = result.get('ml_results', [])
+                    if ml_results:
+                        for ml_result in ml_results:
+                            if ml_result.get('is_threat', False):
+                                primary_threat = f"ml_{ml_result.get('method', 'classification')}"
+                                break
+                    else:
+                        primary_threat = 'ml_detected_threat'
+                elif filter_name == 'obfuscation_detector':
+                    primary_threat = 'obfuscation_detected'
+        
+        # More specific threat detection based on risk level
+        if max_risk >= 0.8:
+            primary_threat = primary_threat + '_critical'
+        elif max_risk >= 0.6:
+            primary_threat = primary_threat + '_high'
+        elif max_risk >= 0.3:
+            primary_threat = primary_threat + '_medium'
+        elif max_risk < 0.1:
+            primary_threat = 'safe_content'
+        
+        return primary_threat
+
+    def _get_primary_model_used(self, filter_results: Dict[str, Any]) -> str:
+        """Determine which model/filter was primarily responsible for the decision."""
+        # Check which filter had the highest risk score
+        max_risk = 0.0
+        primary_model = 'policy_engine'
+        
+        for filter_name, result in filter_results.items():
+            risk_score = result.get('risk_score', 0.0)
+            if risk_score > max_risk:
+                max_risk = risk_score
+                primary_model = filter_name
+        
+        return primary_model
+        
+    # def _extract_primary_threat(self, filter_results: Dict[str, Any], policy_decision: Dict) -> str:
+    #     """Extract the primary threat type from filter results."""
+    #     # Check for highest risk score filter
+    #     max_risk = 0.0
+    #     primary_threat = 'unknown'
+        
+    #     for filter_name, result in filter_results.items():
+    #         risk_score = result.get('risk_score', 0.0)
+    #         if risk_score > max_risk:
+    #             max_risk = risk_score
+    #             if filter_name == 'regex_filter':
+    #                 primary_threat = result.get('matched_patterns', ['regex_detection'])[0] if result.get('matched_patterns') else 'regex_detection'
+    #             elif filter_name == 'ml_classifier':
+    #                 primary_threat = 'ml_detected_threat'
+    #             elif filter_name == 'obfuscation_detector':
+    #                 primary_threat = 'obfuscation_detected'
+        
+    #     # If no significant threat detected but still blocked/flagged
+    #     if max_risk < 0.3 and policy_decision.get('decision') in ['BLOCK', 'SANITIZE']:
+    #         primary_threat = 'policy_violation'
+    #     elif max_risk < 0.1:
+    #         primary_threat = 'safe_content'
+        
+    #     return primary_threat
+
+    # def _get_primary_model_used(self, filter_results: Dict[str, Any]) -> str:
+    #     """Determine which model/filter was primarily responsible for the decision."""
+    #     # Check which filter had the highest risk score
+    #     max_risk = 0.0
+    #     primary_model = 'unknown'
+        
+    #     for filter_name, result in filter_results.items():
+    #         risk_score = result.get('risk_score', 0.0)
+    #         if risk_score > max_risk:
+    #             max_risk = risk_score
+    #             primary_model = filter_name
+        
+    #     # If multiple filters detected similar risks, prefer ML > regex > obfuscation
+    #     ml_risk = filter_results.get('ml_classifier', {}).get('risk_score', 0.0)
+    #     regex_risk = filter_results.get('regex_filter', {}).get('risk_score', 0.0)
+    #     obfuscation_risk = filter_results.get('obfuscation_detector', {}).get('risk_score', 0.0)
+        
+    #     if ml_risk >= 0.5:
+    #         primary_model = 'ml_classifier'
+    #     elif regex_risk >= 0.5:
+    #         primary_model = 'regex_filter'
+    #     elif obfuscation_risk >= 0.5:
+    #         primary_model = 'obfuscation_detector'
+    #     else:
+    #         primary_model = 'policy_engine'
+        
+    #     return primary_model
 
 # Global pipeline instance
 security_pipeline = SecurityPipeline()
