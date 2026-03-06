@@ -42,10 +42,10 @@ const riskDistributionData = [
 const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
         return (
-            <div className="bg-card-bg border border-border-color rounded-lg p-3 shadow-lg">
-                <p className="text-text-primary font-medium">{label}</p>
+            <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+                <p className="text-textPrimary font-medium">{label}</p>
                 {payload.map((entry, index) => (
-                    <p key={index} className="text-primary-accent text-sm">
+                    <p key={index} className="text-primary text-sm">
                         {entry.name}: {typeof entry.value === 'number' ? entry.value.toFixed(2) : entry.value}
                     </p>
                 ))}
@@ -56,8 +56,8 @@ const CustomTooltip = ({ active, payload, label }) => {
 };
 
 export const SafetyTrendChart = () => (
-    <div className="bg-card-bg rounded-xl p-6 border border-border-color">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Safety Score Trend</h3>
+    <div className="bg-card rounded-xl p-6 border border-border">
+        <h3 className="text-lg font-semibold text-textPrimary mb-4">Safety Score Trend</h3>
         <ResponsiveContainer width="100%" height={300}>
             <LineChart data={safetyTrendData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
@@ -78,8 +78,8 @@ export const SafetyTrendChart = () => (
 );
 
 export const ViolationsChart = () => (
-    <div className="bg-card-bg rounded-xl p-6 border border-border-color">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Top Violations by Category</h3>
+    <div className="bg-card rounded-xl p-6 border border-border">
+        <h3 className="text-lg font-semibold text-textPrimary mb-4">Top Violations by Category</h3>
         <ResponsiveContainer width="100%" height={300}>
             <BarChart data={violationData} layout="horizontal">
                 <CartesianGrid strokeDasharray="3 3" stroke="#1F2937" />
@@ -93,8 +93,8 @@ export const ViolationsChart = () => (
 );
 
 export const RiskDistributionChart = () => (
-    <div className="bg-card-bg rounded-xl p-6 border border-border-color">
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Risk Level Distribution</h3>
+    <div className="bg-card rounded-xl p-6 border border-border">
+        <h3 className="text-lg font-semibold text-textPrimary mb-4">Risk Level Distribution</h3>
         <ResponsiveContainer width="100%" height={300}>
             <PieChart>
                 <Pie

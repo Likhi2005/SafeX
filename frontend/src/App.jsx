@@ -10,7 +10,7 @@ import Settings from './pages/Settings';
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-dark-bg">
+      <div className="min-h-screen bg-background">
         <Sidebar />
         <Navbar />
 
@@ -30,6 +30,52 @@ function App() {
 }
 
 export default App;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// import React from 'react';
+// import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+// import Sidebar from './components/Sidebar';
+// import Navbar from './components/Navbar';
+// import Dashboard from './pages/Dashboard';
+// import SafetyCheck from './pages/SafetyCheck';
+// import Logs from './pages/Logs';
+// import Settings from './pages/Settings';
+
+// function App() {
+//   return (
+//     <Router>
+//       <div className="min-h-screen bg-dark-bg">
+//         <Sidebar />
+//         <Navbar />
+
+//         <main className="ml-64 pt-16 min-h-screen">
+//           <div className="p-6">
+//             <Routes>
+//               <Route path="/" element={<Dashboard />} />
+//               <Route path="/safety-check" element={<SafetyCheck />} />
+//               <Route path="/logs" element={<Logs />} />
+//               <Route path="/settings" element={<Settings />} />
+//             </Routes>
+//           </div>
+//         </main>
+//       </div>
+//     </Router>
+//   );
+// }
+
+// export default App;
 
 
 
