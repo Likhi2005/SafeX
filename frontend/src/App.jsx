@@ -5,6 +5,7 @@ import Navbar from './components/Navbar';
 import Dashboard from './pages/Dashboard';
 import SafetyCheck from './pages/SafetyCheck';
 import Logs from './pages/Logs';
+import Intelligence from './pages/Intelligence';
 import Settings from './pages/Settings';
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
               <Route path="/" element={<Dashboard />} />
               <Route path="/safety-check" element={<SafetyCheck />} />
               <Route path="/logs" element={<Logs />} />
+              <Route path="/intelligence" element={<Intelligence />} />
               <Route path="/settings" element={<Settings />} />
             </Routes>
           </div>

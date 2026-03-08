@@ -16,6 +16,9 @@ from backend.config.database import DatabaseConfig
 # Model Initializer
 from backend.ml.model_initializer import model_initializer
 
+# WebSocket and Threat Intelligence
+from backend.websocket.threat_websocket import ws_service
+
 def create_app():
     """Application factory pattern for Flask app."""
     app = Flask(__name__)
@@ -249,6 +252,10 @@ def create_app():
         app.register_blueprint(analysis_bp)
         logger.info("Blueprints registered successfully")
         
+        # Initialize WebSocket service
+        socketio = ws_service.init_app(app)
+        logger.info("WebSocket service initialized")
+        
     except ImportError as e:
         logger.warning(f"Blueprint import failed: {e}")
         
@@ -307,18 +314,19 @@ def create_app():
             "service": "SafeX Security Gateway"
         }), 500
     
-    return app
+    return app, socketio
 
 if __name__ == '__main__':
     print("Starting SafeX Security Gateway v2.0.0...")
-    app = create_app()
+    app, socketio = create_app()
     
     host = os.environ.get('HOST', '0.0.0.0')
     port = int(os.environ.get('PORT', 5000))
     debug = os.environ.get('DEBUG', 'False').lower() == 'true'
     
     print(f"Server ready at http://{host}:{port}")
-    app.run(host=host, port=port, debug=debug, threaded=True)
+    # Use socketio.run instead of app.run for WebSocket support
+    socketio.run(app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)
 
 
 

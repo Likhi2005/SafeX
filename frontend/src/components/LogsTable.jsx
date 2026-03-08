@@ -6,7 +6,7 @@ import {
     ClockIcon,
     ExclamationTriangleIcon,
     CheckCircleIcon,
-    ShieldExclamationIcon
+    ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 
 const LogsTable = ({ logs, loading, onRefresh }) => {

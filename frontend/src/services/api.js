@@ -389,6 +389,71 @@ export const getThreatTrends = async (days = 7) => {
     }
 };
 
+// New Threat Intelligence API Functions
+export const getRealTimeIntelligence = async (minutes = 30) => {
+    try {
+        const response = await api.get(`/api/intelligence/real-time?minutes=${minutes}`);
+        return {
+            success: true,
+            data: response.data,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message,
+            data: null,
+        };
+    }
+};
+
+export const getAttackPatterns = async (hours = 24) => {
+    try {
+        const response = await api.get(`/api/intelligence/patterns?hours=${hours}`);
+        return {
+            success: true,
+            data: response.data,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message,
+            data: null,
+        };
+    }
+};
+
+export const getThreatPredictions = async () => {
+    try {
+        const response = await api.get('/api/intelligence/predictions');
+        return {
+            success: true,
+            data: response.data,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message,
+            data: null,
+        };
+    }
+};
+
+export const getIntelligenceDashboard = async (minutes = 60) => {
+    try {
+        const response = await api.get(`/api/intelligence/dashboard?minutes=${minutes}`);
+        return {
+            success: true,
+            data: response.data,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message,
+            data: null,
+        };
+    }
+};
+
 export default api;
 
 

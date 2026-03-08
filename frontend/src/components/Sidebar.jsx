@@ -5,7 +5,8 @@ import {
     ShieldCheckIcon,
     DocumentTextIcon,
     CogIcon,
-    HomeIcon
+    HomeIcon,
+    EyeIcon
 } from '@heroicons/react/24/outline';
 
 const Sidebar = () => {
@@ -15,6 +16,7 @@ const Sidebar = () => {
         { name: 'Dashboard', path: '/', icon: HomeIcon },
         { name: 'Safety Check', path: '/safety-check', icon: ShieldCheckIcon },
         { name: 'Logs', path: '/logs', icon: DocumentTextIcon },
+        { name: 'Intelligence', path: '/intelligence', icon: EyeIcon },
         { name: 'Settings', path: '/settings', icon: CogIcon },
     ];
 

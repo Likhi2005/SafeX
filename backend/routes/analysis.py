@@ -5,6 +5,7 @@ from backend.core.security_pipeline import analyze_prompt_security
 
 from backend.models.threat_log import ThreatLog
 from backend.services.threat_service import ThreatLogService
+from backend.services.threat_intelligence import threat_intelligence
 
 # Add SQLAlchemy imports for the trends endpoint
 from backend.models import db
@@ -493,4 +494,112 @@ def get_threat_statistics():
         return jsonify({
             'status': 'error',
             'message': 'Failed to fetch statistics'
+        }), 500
+
+# New Threat Intelligence Endpoints
+@analysis_bp.route('/api/intelligence/real-time', methods=['GET'])
+def get_real_time_intelligence():
+    """Get real-time threat intelligence data."""
+    try:
+        minutes = request.args.get('minutes', 30, type=int)
+        if minutes < 1 or minutes > 1440:  # Max 24 hours
+            return jsonify({
+                'status': 'error',
+                'message': 'Minutes parameter must be between 1 and 1440'
+            }), 400
+        
+        intelligence_data = threat_intelligence.get_real_time_threats(minutes=minutes)
+        
+        return jsonify({
+            'status': 'success',
+            'intelligence': intelligence_data,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Real-time intelligence error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to fetch real-time intelligence'
+        }), 500
+
+@analysis_bp.route('/api/intelligence/patterns', methods=['GET'])
+def get_attack_patterns():
+    """Get attack pattern analysis and threat clustering."""
+    try:
+        hours = request.args.get('hours', 24, type=int)
+        if hours < 1 or hours > 168:  # Max 7 days
+            return jsonify({
+                'status': 'error',
+                'message': 'Hours parameter must be between 1 and 168'
+            }), 400
+        
+        patterns = threat_intelligence.detect_attack_patterns(hours=hours)
+        
+        return jsonify({
+            'status': 'success',
+            'patterns': patterns,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Attack patterns error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to analyze attack patterns'
+        }), 500
+
+@analysis_bp.route('/api/intelligence/predictions', methods=['GET'])
+def get_threat_predictions():
+    """Get AI-powered threat predictions and forecasts."""
+    try:
+        predictions = threat_intelligence.get_threat_predictions()
+        
+        return jsonify({
+            'status': 'success',
+            'predictions': predictions,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Threat predictions error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to generate predictions'
+        }), 500
+
+@analysis_bp.route('/api/intelligence/dashboard', methods=['GET'])
+def get_intelligence_dashboard():
+    """Get comprehensive intelligence dashboard data."""
+    try:
+        # Get all intelligence data in one call for dashboard
+        minutes = request.args.get('minutes', 60, type=int)
+        
+        real_time_data = threat_intelligence.get_real_time_threats(minutes=minutes)
+        patterns_data = threat_intelligence.detect_attack_patterns(hours=6)
+        predictions_data = threat_intelligence.get_threat_predictions()
+        
+        dashboard_data = {
+            'real_time': real_time_data,
+            'patterns': patterns_data,
+            'predictions': predictions_data,
+            'summary': {
+                'active_threats': len(real_time_data.get('threats', [])),
+                'campaigns_detected': len(patterns_data.get('patterns', {}).get('attack_campaigns', [])),
+                'risk_level': predictions_data.get('predictions', {}).get('next_hour_risk', {}).get('level', 'low'),
+                'last_updated': datetime.now(timezone.utc).isoformat()
+            }
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'dashboard': dashboard_data,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Intelligence dashboard error: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': 'Failed to load intelligence dashboard'
         }), 500
